@@ -457,7 +457,32 @@ def process_setname(message):
     conn.commit()
     conn.close()
 
-    bot.send_message(user_id, f"✅ Имя изменено на: {new_name}")
+    bot.send_message(user_id, f"✅ Имя изменено на: {new_name}")@bot.message_handler(commands=['stats'])
+def send_stats(message):
+    user_id = message.from_user.id
+    
+    # Подключаемся к БД
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    
+    # Считаем общее количество игроков
+    c.execute("SELECT COUNT(*) FROM players")
+    total_players = c.fetchone()
+    
+    # Считаем тюленей у этого пользователя
+    c.execute("SELECT COUNT(*) FROM seals WHERE owner_id = ?", (user_id,))
+    user_seals_count = c.fetchone()
+    
+    conn.close()
+    
+    # Формируем ответ
+    response = (
+        f"📊 Статистика игры:\n\n"
+        f"Всего игроков: {total_players}\n"
+        f"У тебя тюленей: {user_seals_count}"
+    )
+    
+    bot.reply_to(message, response)
 
 # ==================== ТЮЛЕНЬ ====================
 
