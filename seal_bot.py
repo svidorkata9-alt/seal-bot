@@ -316,6 +316,47 @@ def cmd_start(message):
         bot.send_message(user_id, f"Добро пожаловать в Мир Тюленей! 🦭\n\nВам выдали тюленя по имени {seal_name} и 100 рыбнеток 🐟.\nИспользуйте кнопки меню для игры!")
     else:
         bot.send_message(user_id, "С возвращением! 🦭 Вы уже зарегистрированы.")
+        @bot.message_handler(commands=['stats'])
+        @bot.message_handler(func=lambda message: any(word in message.text.lower() for word in ["похлопай по животику", "шлёпни по пузику", "дай пять животику", "погладь животик", "похлопай по пузику"]))
+def belly_slap_text(message):
+    phrases = [
+        "🦭 Тюлень радостно хлопает себя по животику! Плюх-плюх! 😄",
+        "🦭 *шлёп-шлёп* Так приятно! Ещё? 😊",
+        "🦭 Хлоп-хлоп! У тюленя отличное настроение! 🎉",
+        "🦭 *плюх* Какой мягкий животик! Спасибо! 🤗"
+    ]
+    
+    import random
+    response = random.choice(phrases)
+    
+    bot.reply_to(message, response)
+
+def send_stats(message):
+    user_id = message.from_user.id
+    
+    # Подключаемся к БД
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    
+    # Считаем общее количество игроков
+    c.execute("SELECT COUNT(*) FROM players")
+    total_players = c.fetchone()
+    
+    # Считаем тюленей у этого пользователя
+    c.execute("SELECT COUNT(*) FROM seals WHERE owner_id = ?", (user_id,))
+    user_seals_count = c.fetchone()
+    
+    conn.close()
+    
+    # Формируем ответ
+    response = (
+        f"📊 Статистика игры:\n\n"
+        f"Всего игроков: {total_players}\n"
+        f"У тебя тюленей: {user_seals_count}"
+    )
+    
+    bot.reply_to(message, response)
+
 @bot.message_handler(commands=['help'])
 def cmd_help(message):
     text = "🦭 **Справка по командам**\n\n"
