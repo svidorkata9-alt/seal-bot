@@ -317,7 +317,7 @@ def cmd_start(message):
     else:
         bot.send_message(user_id, "С возвращением! 🦭 Вы уже зарегистрированы.")
         @bot.message_handler(commands=['stats'])
-        @bot.message_handler(func=lambda message: any(word in message.text.lower() for word in ["похлопай по животику", "шлёпни по пузику", "дай пять животику", "погладь животик", "похлопай по пузику"]))
+       @bot.message_handler(func=lambda message: any(word in message.text.lower() for word in ["похлопай по животику", "шлёпни по пузику", "дай пять животику", "погладь животик", "похлопай по пузику"]))
 def belly_slap_text(message):
     phrases = [
         "🦭 Тюлень радостно хлопает себя по животику! Плюх-плюх! 😄",
