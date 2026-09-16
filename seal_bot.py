@@ -317,7 +317,6 @@ def cmd_start(message):
     else:
         bot.send_message(user_id, "С возвращением! 🦭 Вы уже зарегистрированы.")
         @bot.message_handler(commands=['stats'])
-        
 def send_stats(message):
     user_id = message.from_user.id
     
