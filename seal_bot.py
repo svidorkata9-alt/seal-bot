@@ -19,6 +19,7 @@ def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
+    # Создаем таблицы, если их нет
     c.execute('''CREATE TABLE IF NOT EXISTS players (
         user_id INTEGER PRIMARY KEY,
         username TEXT,
@@ -86,20 +87,26 @@ def init_db():
         active INTEGER DEFAULT 0
     )''')
 
-    # Миграция: добавляем новые колонки если их нет
+    # --- БЛОК МИГРАЦИЙ (безопасное добавление колонок) ---
+    # Получаем список текущих колонок таблицы seals
     c.execute("PRAGMA table_info(seals)")
-    cols = [row for row in c.fetchall()]
-    if "equipped_accessory" not in cols:
-        c.execute("ALTER TABLE seals ADD COLUMN equipped_accessory TEXT")
-    if "work_cooldown" not in cols:
-        c.execute("ALTER TABLE seals ADD COLUMN work_cooldown TEXT")
-    if "play_cooldown" not in cols:
-        c.execute("ALTER TABLE seals ADD COLUMN play_cooldown TEXT")
+    existing_cols = {row for row in c.fetchall()}  # множество имен колонок
+
+    # Список колонок, которые могли отсутствовать в старых версиях БД
+    cols_to_add = [
+        ("equipped_accessory", "TEXT"),
+        ("work_cooldown", "TEXT"),
+        ("play_cooldown", "TEXT"),
+    ]
+
+    for col_name, col_type in cols_to_add:
+        if col_name not in existing_cols:
+            c.execute(f"ALTER TABLE seals ADD COLUMN {col_name} {col_type}")
+            print(f"[DB MIGRATION] Добавлена колонка: {col_name}")
 
     conn.commit()
     conn.close()
 
-init_db()
 
 # ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 
