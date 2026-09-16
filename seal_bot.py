@@ -482,6 +482,18 @@ def send_stats(message):
         f"У тебя тюленей: {user_seals_count}"
     )
     
+    bot.reply_to(message, response)@bot.message_handler(func=lambda message: any(word in message.text.lower() for word in ["похлопай по животику", "шлёпни по пузику", "дай пять животику", "погладь животик", "похлопай по пузику"]))
+def belly_slap_text(message):
+    phrases = [
+        "🦭 Тюлень радостно хлопает себя по животику! Плюх-плюх! 😄",
+        "🦭 *шлёп-шлёп* Так приятно! Ещё? 😊",
+        "🦭 Хлоп-хлоп! У тюленя отличное настроение! 🎉",
+        "🦭 *плюх* Какой мягкий животик! Спасибо! 🤗"
+    ]
+    
+    import random
+    response = random.choice(phrases)
+    
     bot.reply_to(message, response)
 
 # ==================== ТЮЛЕНЬ ====================
