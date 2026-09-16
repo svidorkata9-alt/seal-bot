@@ -7,7 +7,8 @@ import time
 import os
 from datetime import datetime, date, timedelta
 
-TOKEN = "TELEGRAM_BOT_TOKEN"
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+
 bot = telebot.TeleBot(TOKEN)
 
 DB_PATH = "seal_life.db"
