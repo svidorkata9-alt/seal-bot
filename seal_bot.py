@@ -1070,8 +1070,8 @@ def seal_feed(call):
 def seal_do_feed(call):
     uid = call.from_user.id
     p = call.data.split("_")
-    sid = int(p[2])
-    name = "_".join(p[3:])
+    sid = int(p[1])
+    name = "_".join(p[2:])
     info = SHOP_ITEMS.get(name)
     if not info:
         bot.answer_callback_query(call.id, "Не найден!")
@@ -1173,8 +1173,8 @@ def seal_equip_menu(call):
 def seal_do_equip(call):
     uid = call.from_user.id
     p = call.data.split("_")
-    sid = int(p[2])
-    name = "_".join(p[3:])
+    sid = int(p[1])
+    name = "_".join(p[2:])
     it = ITEM_TYPES.get(name)
     if not it:
         bot.answer_callback_query(call.id, "Не найден!")
@@ -1200,6 +1200,7 @@ def seal_do_equip(call):
         add_faction_rep(uid, 2)
     bot.answer_callback_query(call.id, f"Надето: {name}")
     seal_selected(call, sid)
+
 
 @bot.callback_query_handler(func=lambda c: c.data == "back_main")
 def back_to_main(call):
@@ -1521,8 +1522,8 @@ def dng_floor(call, sid, fl):
 def dng_atk(call):
     uid = call.from_user.id
     p = call.data.split("_")
-    sid = int(p[2])
-    fl = int(p[3])
+    sid = int(p[1])
+    fl = int(p[2])
     seal = get_seal(sid)
     if not seal:
         return
@@ -1587,7 +1588,7 @@ def dng_atk(call):
 @bot.callback_query_handler(func=lambda c: c.data.startswith("dn_"))
 def dng_next(call):
     p = call.data.split("_")
-    dng_floor(call, int(p[2]), int(p[3]))
+    dng_floor(call, int(p[1]), int(p[2]))
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("df_"))
 def dng_flee(call):
@@ -1598,6 +1599,7 @@ def dng_flee(call):
     conn.commit()
     conn.close()
     bot.edit_message_text("🏃 Сбежали.", call.message.chat.id, call.message.message_id)
+
 
 # ==================== РЫБАЛКА ====================
 fish_active = {}
@@ -1750,8 +1752,8 @@ def duel_accept(call):
 def duel_seal(call):
     uid = call.from_user.id
     p = call.data.split("_")
-    did = int(p[2])
-    osid = int(p[3])
+    did = int(p[1])
+    osid = int(p[2])
     duel = get_duel(did)
     if not duel or duel[5] != 'pending':
         bot.answer_callback_query(call.id, "Недоступна!")
@@ -2186,8 +2188,8 @@ def clan_dng_floor(call, cid, fl):
 def clan_dng_atk(call):
     uid = call.from_user.id
     p = call.data.split("_")
-    cid = int(p[2])
-    fl = int(p[3])
+    cid = int(p[1])
+    fl = int(p[2])
     members = get_clan_members(cid)
     all_seals = []
     for mid in members:
@@ -2204,9 +2206,9 @@ def clan_dng_atk(call):
     thp = sum(seal_hp.values())
     log = [f"🏰 Этаж {fl}: {len(all_seals)} тюленей vs {mon['name']}"]
     while thp > 0 and mon["hp"] > 0:
-        d = max(1, ts - mon["def"] + random.randint(-5, 10))
-        mon["hp"] -= d
-        log.append(f"Тюлени →{d} (монстр {max(0, mon['hp'])}❤️)")
+        dmg = max(1, ts - mon["def"] + random.randint(-5, 10))
+        mon["hp"] -= dmg
+        log.append(f"Тюлени →{dmg} (монстр {max(0, mon['hp'])}❤️)")
         if mon["hp"] <= 0:
             break
         dm = max(1, mon["str"] - td + random.randint(-2, 6))
@@ -2228,7 +2230,7 @@ def clan_dng_atk(call):
         log.append(f"🏆 Все получили 🐟{rw} и +{eg}оп!")
         update_quest_chain(uid, "clan_dungeon_floor", fl)
         if fl >= CLAN_DUNGEON_FLOORS:
-            log.append(f"👑 *Клановое подземелье пройдено!*")
+            log.append("👑 *Клановое подземелье пройдено!*")
             conn = sqlite3.connect(DB_PATH)
             c = conn.cursor()
             c.execute("UPDATE clan_dungeons SET active=0 WHERE clan_id=?", (cid,))
@@ -2256,11 +2258,11 @@ def clan_dng_atk(call):
 @bot.callback_query_handler(func=lambda c: c.data.startswith("cdn_"))
 def clan_dng_next(call):
     p = call.data.split("_")
-    clan_dng_floor(call, int(p[2]), int(p[3]))
+    clan_dng_floor(call, int(p[1]), int(p[2]))
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("cdf_"))
 def clan_dng_flee(call):
-    cid = int(call.data.split("_")[2])
+    cid = int(call.data.split("_")[1])
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("UPDATE clan_dungeons SET active=0 WHERE clan_id=?", (cid,))
