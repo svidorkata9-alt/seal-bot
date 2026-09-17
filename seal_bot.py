@@ -30,7 +30,7 @@ def get_db_version(conn):
     try:
         c.execute("SELECT value FROM _meta WHERE key='schema_version'")
         r = c.fetchone()
-        return int(r[0]) if r else 0
+        return int(r) if r else 0
     except sqlite3.OperationalError: return 0
 
 def set_db_version(conn, v):
@@ -40,8 +40,40 @@ def set_db_version(conn, v):
     conn.commit()
 
 def migration_1(c):
-    c.execute("CREATE TABLE IF NOT EXISTS players (user_id INTEGER PRIMARY KEY, username TEXT, display_name TEXT, photo_path TEXT, fishnets INTEGER DEFAULT 100, faction TEXT, faction_rep INTEGER DEFAULT 0, fish_cooldown TEXT)")
-    c.execute("CREATE TABLE IF NOT EXISTS seals (seal_id INTEGER PRIMARY KEY AUTOINCREMENT, owner_id INTEGER, name TEXT, health INTEGER DEFAULT 100, max_health INTEGER DEFAULT 100, mood INTEGER DEFAULT 80, satiety INTEGER DEFAULT 80, strength INTEGER DEFAULT 10, defense INTEGER DEFAULT 5, level INTEGER DEFAULT 1, exp INTEGER DEFAULT 0, is_baby INTEGER DEFAULT 0, born_at TEXT, equipped_weapon TEXT, equipped_armor TEXT, equipped_helmet TEXT, equipped_shield TEXT, equipped_accessory TEXT, work_cooldown TEXT, play_cooldown TEXT, photo_path TEXT, work_cooldown_min INTEGER DEFAULT 0)")
+    c.execute("""CREATE TABLE IF NOT EXISTS players (
+        user_id INTEGER PRIMARY KEY, 
+        username TEXT, 
+        display_name TEXT, 
+        photo_path TEXT, 
+        fishnets INTEGER DEFAULT 100, 
+        faction TEXT, 
+        faction_rep INTEGER DEFAULT 0, 
+        fish_cooldown TEXT
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS seals (
+        seal_id INTEGER PRIMARY KEY AUTOINCREMENT, 
+        owner_id INTEGER, 
+        name TEXT, 
+        health INTEGER DEFAULT 100, 
+        max_health INTEGER DEFAULT 100, 
+        mood INTEGER DEFAULT 80, 
+        satiety INTEGER DEFAULT 80, 
+        strength INTEGER DEFAULT 10, 
+        defense INTEGER DEFAULT 5, 
+        level INTEGER DEFAULT 1, 
+        exp INTEGER DEFAULT 0, 
+        is_baby INTEGER DEFAULT 0, 
+        born_at TEXT, 
+        equipped_weapon TEXT, 
+        equipped_armor TEXT, 
+        equipped_helmet TEXT, 
+        equipped_shield TEXT, 
+        equipped_accessory TEXT, 
+        work_cooldown TEXT, 
+        play_cooldown TEXT, 
+        photo_path TEXT, 
+        work_cooldown_min INTEGER DEFAULT 0
+    )""")
     c.execute("CREATE TABLE IF NOT EXISTS marriages (marriage_id INTEGER PRIMARY KEY AUTOINCREMENT, seal1_id INTEGER, seal2_id INTEGER, player1_id INTEGER, player2_id INTEGER, created_at TEXT)")
     c.execute("CREATE TABLE IF NOT EXISTS inventory (inv_id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, item_name TEXT, item_type TEXT, quantity INTEGER DEFAULT 1)")
     c.execute("CREATE TABLE IF NOT EXISTS daily_quests (quest_id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, quest_type TEXT, quest_target INTEGER, quest_progress INTEGER DEFAULT 0, quest_reward INTEGER, date TEXT, claimed INTEGER DEFAULT 0)")
@@ -58,6 +90,7 @@ def migration_2(c):
     c.execute("CREATE TABLE IF NOT EXISTS clans (clan_id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, emblem TEXT, leader_id INTEGER, created_at TEXT)")
     c.execute("CREATE TABLE IF NOT EXISTS clan_members (id INTEGER PRIMARY KEY AUTOINCREMENT, clan_id INTEGER, user_id INTEGER, joined_at TEXT)")
     c.execute("CREATE TABLE IF NOT EXISTS clan_dungeons (id INTEGER PRIMARY KEY AUTOINCREMENT, clan_id INTEGER, current_floor INTEGER DEFAULT 1, active INTEGER DEFAULT 0, started_by INTEGER)")
+    
     chains = [
         (1,"Потерянный компас","Старый мудрый тюлень потерял компас во время шторма.",
          json.dumps([{"type":"dungeon_floor","target":3,"desc":"Дойдите до 3-го этажа подземелья"},{"type":"battle_count","target":2,"desc":"Победите 2 боссов"},{"type":"craft_item","target":1,"desc":"Скрафтите 1 предмет"}]),
@@ -86,391 +119,698 @@ def run_migrations():
 
 # ==================== КОНСТАНТЫ ====================
 SHOP_ITEMS = {
-    "Апельсин 🍊":{"price":15,"type":"food","satiety":25,"mood":10},
-    "Рыба 🐟":{"price":10,"type":"food","satiety":20,"mood":5},
-    "Кальмар 🦑":{"price":25,"type":"food","satiety":35,"mood":15},
-    "Мороженое 🍦":{"price":20,"type":"food","satiety":15,"mood":30},
-    "Креветка 🦐":{"price":18,"type":"food","satiety":22,"mood":8},
-    "Устрица 🦪":{"price":30,"type":"food","satiety":40,"mood":20},
-    "Водоросли 🌿":{"price":8,"type":"food","satiety":15,"mood":3},
-    "Аптечка 💊":{"price":100,"type":"medkit","heal":50},
-    "Бантик 🎀":{"price":40,"type":"accessory"},"Шарф 🧣":{"price":35,"type":"accessory"},
-    "Корона 👑":{"price":200,"type":"accessory"},"Очки 🕶️":{"price":50,"type":"accessory"},
-    "Цветок 🌸":{"price":25,"type":"accessory"},"Морская звезда ⭐":{"price":60,"type":"accessory"},
-    "Жемчужное ожерелье 🫧":{"price":120,"type":"accessory"},"Перо чайки 🪶":{"price":30,"type":"accessory"},
-    "Радужный пояс 🌈":{"price":80,"type":"accessory"},
+    "Апельсин 🍊": {"price": 15, "type": "food", "satiety": 25, "mood": 10},
+    "Рыба 🐟": {"price": 10, "type": "food", "satiety": 20, "mood": 5},
+    "Кальмар 🦑": {"price": 25, "type": "food", "satiety": 35, "mood": 15},
+    "Мороженое 🍦": {"price": 20, "type": "food", "satiety": 15, "mood": 30},
+    "Креветка 🦐": {"price": 18, "type": "food", "satiety": 22, "mood": 8},
+    "Устрица 🦪": {"price": 30, "type": "food", "satiety": 40, "mood": 20},
+    "Водоросли 🌿": {"price": 8, "type": "food", "satiety": 15, "mood": 3},
+    "Аптечка 💊": {"price": 100, "type": "medkit", "heal": 50},
+    "Бантик 🎀": {"price": 40, "type": "accessory"},
+    "Шарф 🧣": {"price": 35, "type": "accessory"},
+    "Корона 👑": {"price": 200, "type": "accessory"},
+    "Очки 🕶️": {"price": 50, "type": "accessory"},
+    "Цветок 🌸": {"price": 25, "type": "accessory"},
+    "Морская звезда ⭐": {"price": 60, "type": "accessory"},
+    "Жемчужное ожерелье 🫧": {"price": 120, "type": "accessory"},
+    "Перо чайки 🪶": {"price": 30, "type": "accessory"},
+    "Радужный пояс 🌈": {"price": 80, "type": "accessory"},
 }
-ITEM_BONUSES = {
-    "Костяной меч 🗡️":{"str":5},"Акулий клык 🦷":{"str":8},"Трезубец 🔱":{"str":12},"Китовый клинок 🐋":{"str":15},
-    "Чешуйчатая броня 🐟":{"def":5,"hp":10},"Панцирь краба 🦀":{"def":8,"hp":15},
-    "Плетёная броня 🧵":{"def":10,"hp":25},"Кракеновый панцирь 🐙":{"def":15,"hp":40},
-    "Шлем из ракушек 🐚":{"def":3,"hp":10},"Костяной шлем 💀":{"def":5,"hp":15},"Корона из зубов 👑":{"def":8,"hp":20},
-    "Щит из чешуи 🐠":{"def":5},"Панцирный щит 🛡️":{"def":8},"Щит кракена 🦑":{"def":12},
-}
-ACCESSORY_BONUSES = {
-    "Бантик 🎀":10,"Шарф 🧣":8,"Корона 👑":20,"Очки 🕶️":7,"Цветок 🌸":5,
-    "Компас мудреца 🧭":25,"Амулет глубин 🌊":22,"Корона чемпиона 👑":30,
-    "Морская звезда ⭐":12,"Жемчужное ожерелье 🫧":18,"Перо чайки 🪶":6,"Радужный пояс 🌈":14,
-}
-CRAFT_RECIPES = [
-    {"name":"Костяной меч 🗡️","type":"weapon","resources":{"Акулий зуб 🦈":3}},
-    {"name":"Акулий клык 🦷","type":"weapon","resources":{"Акулий зуб 🦈":5,"Чешуя 🐟":2}},
-    {"name":"Трезубец 🔱","type":"weapon","resources":{"Щупальце 🐙":4,"Акулий зуб 🦈":3}},
-    {"name":"Китовый клинок 🐋","type":"weapon","resources":{"Китовый ус 🐋":3,"Жемчуг 🫧":1}},
-    {"name":"Чешуйчатая броня 🐟","type":"armor","resources":{"Чешуя 🐟":4}},
-    {"name":"Панцирь краба 🦀","type":"armor","resources":{"Панцирь 🦀":3}},
-    {"name":"Плетёная броня 🧵","type":"armor","resources":{"Щупальце 🐙":3,"Чешуя 🐟":2}},
-    {"name":"Кракеновый панцирь 🐙","type":"armor","resources":{"Щупальце 🐙":5,"Жемчуг 🫧":1}},
-    {"name":"Шлем из ракушек 🐚","type":"helmet","resources":{"Панцирь 🦀":3,"Чешуя 🐟":1}},
-    {"name":"Костяной шлем 💀","type":"helmet","resources":{"Акулий зуб 🦈":3}},
-    {"name":"Корона из зубов 👑","type":"helmet","resources":{"Акулий зуб 🦈":5,"Жемчуг 🫧":1}},
-    {"name":"Щит из чешуи 🐠","type":"shield","resources":{"Чешуя 🐟":4,"Панцирь 🦀":1}},
-    {"name":"Панцирный щит 🛡️","type":"shield","resources":{"Панцирь 🦀":4}},
-    {"name":"Щит кракена 🦑","type":"shield","resources":{"Щупальце 🐙":3,"Панцирь 🦀":2}},
-]
-ITEM_TYPES = {}
-for _n,_i in SHOP_ITEMS.items(): ITEM_TYPES[_n]=_i["type"]
-for _r in CRAFT_RECIPES: ITEM_TYPES[_r["name"]]=_r["type"]
-ITEM_TYPES.update({"Компас мудреца 🧭":"accessory","Амулет глубин 🌊":"accessory","Корона чемпиона 👑":"accessory"})
-SEAL_SKILLS_POOL = [
-    {"name":"Критический удар ⚡","effect":"crit_15","desc":"15% шанс двойного урона"},
-    {"name":"Толстая кожа 🛡️","effect":"dmg_reduce_10","desc":"-10% получаемого урона"},
-    {"name":"Вампиризм 🩸","effect":"lifesteal_5","desc":"Восстанавливает 5% урона"},
-    {"name":"Уклонение 💨","effect":"dodge_10","desc":"10% шанс увернуться"},
-    {"name":"Берсерк 😤","effect":"berserk","desc":"+50% урона при HP<30%"},
-    {"name":"Регенерация 💚","effect":"regen","desc":"+5 HP/час"},
-    {"name":"Шипы 🌵","effect":"thorns","desc":"Отражает 20% урона"},
-    {"name":"Двойной удар ⚔️","effect":"double_strike","desc":"10% шанс 2 атаки"},
-]
-DUNGEON_MONSTERS = [
-    {"name":"Фугу 🐡","hp":30,"str":8,"def":3,"drops":{"Жало 🐡":0.7}},
-    {"name":"Креветка-ниндзя 🦐","hp":35,"str":9,"def":8,"drops":{"Панцирь 🦀":0.5,"Чешуя 🐟":0.3}},
-    {"name":"Акула 🦈","hp":50,"str":12,"def":5,"drops":{"Акулий зуб 🦈":0.7}},
-    {"name":"Морской змей 🐍","hp":60,"str":15,"def":6,"drops":{"Чешуя 🐟":0.7}},
-    {"name":"Кракен 🐙","hp":80,"str":18,"def":8,"drops":{"Щупальце 🐙":0.7,"Жемчуг 🫧":0.1}},
-    {"name":"Лобстер 🦞","hp":40,"str":10,"def":10,"drops":{"Панцирь 🦀":0.7}},
-    {"name":"Кашалот 🐋","hp":120,"str":20,"def":12,"drops":{"Китовый ус 🐋":0.6}},
-    {"name":"Электрический скат ⚡","hp":55,"str":14,"def":4,"drops":{"Чешуя 🐟":0.5,"Жало 🐡":0.3}},
-    {"name":"Гигантская медуза 🪼","hp":45,"str":11,"def":3,"drops":{"Жало 🐡":0.6}},
-    {"name":"Морской дьявол 😈","hp":90,"str":16,"def":9,"drops":{"Жемчуг 🫧":0.3,"Чешуя 🐟":0.4}},
-]
-BOSSES = [
-    {"name":"Краб-босс 🦀","drops":{"Панцирь 🦀":0.8}},{"name":"Акула 🦈","drops":{"Акулий зуб 🦈":0.8}},
-    {"name":"Осьминог 🐙","drops":{"Щупальце 🐙":0.8}},{"name":"Морской ёжик 🦔","drops":{"Жало 🐡":0.8}},
-    {"name":"Кашалот 🐋","drops":{"Китовый ус 🐋":0.7}},{"name":"Морской змей 🐍","drops":{"Чешуя 🐟":0.8}},
-    {"name":"Гигантский краб 🦀","drops":{"Панцирь 🦀":0.8,"Жемчуг 🫧":0.15}},
-    {"name":"Электрический скат ⚡","drops":{"Чешуя 🐟":0.7,"Жало 🐡":0.3}},
-    {"name":"Глубинный монстр 🌑","drops":{"Жемчуг 🫧":0.4,"Щупальце 🐙":0.5}},
-    {"name":"Король креветок 🦐","drops":{"Панцирь 🦀":0.7,"Чешуя 🐟":0.3}},
-]
-CLAN_DUNGEON_MONSTERS = [
-    {"name":"Страж глубин 🌊","hp":200,"str":25,"def":15},{"name":"Древний краб 🦀","hp":250,"str":30,"def":20},
-    {"name":"Призрачная акула 👻","hp":300,"str":35,"def":18},{"name":"Ледяной кальмар 🧊","hp":350,"str":40,"def":25},
-    {"name":"Гигантский спрут 🐙","hp":400,"str":45,"def":22},{"name":"Морской дракон 🐉","hp":500,"str":55,"def":30},
-    {"name":"Бездонный левиафан 🐋","hp":600,"str":60,"def":35},{"name":"Крашеный кракен 🦑","hp":700,"str":70,"def":40},
-    {"name":"Древний бог морей 🔱","hp":800,"str":80,"def":45},{"name":"Повелитель бездны 🌑","hp":1000,"str":100,"def":60},
-]
-JOBS = [
-    {"name":"Рыболов 🎣","desc":"Ловить рыбу","reward_min":20,"reward_max":50,"cooldown_min":30,"mood_cost":5,"satiety_cost":10},
-    {"name":"Почтальон 📬","desc":"Разносить почту","reward_min":30,"reward_max":60,"cooldown_min":45,"mood_cost":8,"satiety_cost":15},
-    {"name":"Укротитель 🦭","desc":"Укрощать морских зверей","reward_min":50,"reward_max":100,"cooldown_min":60,"mood_cost":12,"satiety_cost":20},
-    {"name":"Водолаз 🤿","desc":"Исследовать глубины","reward_min":40,"reward_max":80,"cooldown_min":50,"mood_cost":10,"satiety_cost":18},
-    {"name":"Актёр 🎭","desc":"Выступать в шоу","reward_min":35,"reward_max":70,"cooldown_min":40,"mood_cost":6,"satiety_cost":12},
-]
-FISH_TYPES = [
-    {"name":"Малёк 🐤","reward":(3,8),"correct":"Подсечь!"},{"name":"Окунь 🐟","reward":(8,15),"correct":"Подсечь!"},
-    {"name":"Сёмга 🐠","reward":(15,25),"correct":"Ждать"},{"name":"Золотая рыбка ✨","reward":(30,50),"correct":"Ждать"},
-    {"name":"Краб 🦀","reward":(10,20),"correct":"Отпустить"},
-]
-DAILY_EVENTS = [
-    {"event_type":"exp_boost","effect":"1.5","desc":"+50% к опыту!"},
-    {"event_type":"shop_discount","effect":"0.2","desc":"Скидки 20% в магазине!"},
-    {"event_type":"fishing_bonus","effect":"2.0","desc":"x2 рыбнеток за рыбалку!"},
-]
-FACTIONS = {
-    "hunters":{"name":"Стая охотников 🎯","desc":"Бонус за бои"},
-    "fashion":{"name":"Клуб модников 💅","desc":"Бонус к настроению"},
-    "explorers":{"name":"Гильдия исследователей 🧭","desc":"Бонус к опыту"},
-}
-RANDOM_ENCOUNTERS = [
-    {"name":"Сундук на берегу! 📦","type":"item","chance":0.12,"items":["Чешуя 🐟","Панцирь 🦀","Акулий зуб 🦈","Жемчуг 🫧"]},
-    {"name":"Злой краб! 🦀","type":"battle","chance":0.10,"mood_cost":10,"satiety_cost":10,"drop":{"Панцирь 🦀":0.5}},
-    {"name":"Дружелюбный дельфин 🐬","type":"hint","chance":0.08,"fishnet_reward":(10,30)},
-    {"name":"Затонувший корабль 🚢","type":"fishnets","chance":0.06,"fishnet_reward":(30,80)},
-]
-QUEST_TEMPLATES = [
-    {"type":"play","target":3,"reward":30,"desc":"Поиграть 3 раза"},{"type":"feed","target":3,"reward":30,"desc":"Покормить 3 раза"},
-    {"type":"battle","target":1,"reward":40,"desc":"Победить 1 босса"},{"type":"dungeon","target":1,"reward":50,"desc":"Пройти 1 подземелье"},
-    {"type":"shop","target":1,"reward":20,"desc":"Купить 1 предмет"},{"type":"work","target":1,"reward":35,"desc":"Отправить на работу"},
-    {"type":"craft","target":1,"reward":25,"desc":"Скрафтить 1 предмет"},{"type":"fish","target":1,"reward":25,"desc":"Поймать 1 рыбу"},
-]
-CLAN_EMOJIS = ["🦭","🐋","🦈","🐙","🦀","🦐","🦑","🐬","🐳","🐢"]
 
-# ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
-# seals: 0=id,1=owner,2=name,3=hp,4=max_hp,5=mood,6=satiety,7=str,8=def,9=lvl,10=exp,
-#   11=baby,12=born,13=wep,14=arm,15=helm,16=shield,17=acc,18=work_cd,19=play_cd,20=photo,21=work_cd_min
-# players: 0=uid,1=username,2=display,3=photo,4=fishnets,5=faction,6=rep,7=fish_cd
+ITEM_BONUSES = {
+    "Костяной меч 🗡️": {"str": 5}, "Акулий клык 🦷": {"str": 8}, "Трезубец 🔱": {"str": 12}, "Китовый клинок 🐋": {"str": 15},
+    "Чешуйчатая броня 🐟": {"def": 5, "hp": 10}, "Панцирь краба 🦀": {"def": 8, "hp": 15},
+    "Плетёная броня 🧵": {"def": 10, "hp": 25}, "Кракеновый панцирь 🐙": {"def": 15, "hp": 40},
+    "Шлем из ракушек 🐚": {"def": 3, "hp": 10}, "Костяной шлем 💀": {"def": 5, "hp": 15}, "Корона из зубов 👑": {"def": 8, "hp": 20},
+    "Щит из чешуи 🐠": {"def": 5}, "Панцирный щит 🛡️": {"def": 8}, "Щит кракена 🦑": {"def": 12},
+}
+
+ACCESSORY_BONUSES = {
+    "Бантик 🎀": 10, "Шарф 🧣": 8, "Корона 👑": 20, "Очки 🕶️": 7, "Цветок 🌸": 5,
+    "Компас мудреца 🧭": 25, "Амулет глубин 🌊": 22, "Корона чемпиона 👑": 30,
+    "Морская звезда ⭐": 12, "Жемчужное ожерелье 🫧": 18, "Перо чайки 🪶": 6, "Радужный пояс 🌈": 14,
+}
+
+CRAFT_RECIPES = [
+    {"name": "Костяной меч 🗡️", "type": "weapon", "resources": {"Акулий зуб 🦈": 3}},
+    {"name": "Акулий клык 🦷", "type": "weapon", "resources": {"Акулий зуб 🦈": 5, "Чешуя 🐟": 2}},
+    {"name": "Трезубец 🔱", "type": "weapon", "resources": {"Щупальце 🐙": 4, "Акулий зуб 🦈": 3}},
+    {"name": "Китовый клинок 🐋", "type": "weapon", "resources": {"Китовый ус 🐋": 3, "Жемчуг 🫧": 1}},
+    {"name": "Чешуйчатая броня 🐟", "type": "armor", "resources": {"Чешуя 🐟": 4}},
+    {"name": "Панцирь краба 🦀", "type": "armor", "resources": {"Панцирь 🦀": 3}},
+    {"name": "Плетёная броня 🧵", "type": "armor", "resources": {"Щупальце 🐙": 3, "Чешуя 🐟": 2}},
+    {"name": "Кракеновый панцирь 🐙", "type": "armor", "resources": {"Щупальце 🐙": 5, "Жемчуг 🫧": 1}},
+    {"name": "Шлем из ракушек 🐚", "type": "helmet", "resources": {"Панцирь 🦀": 3, "Чешуя 🐟": 1}},
+    {"name": "Костяной шлем 💀", "type": "helmet", "resources": {"Акулий зуб 🦈": 3}},
+    {"name": "Корона из зубов 👑", "type": "helmet", "resources": {"Акулий зуб 🦈": 5, "Жемчуг 🫧": 1}},
+    {"name": "Щит из чешуи 🐠", "type": "shield", "resources": {"Чешуя 🐟": 4, "Панцирь 🦀": 1}},
+    {"name": "Панцирный щит 🛡️", "type": "shield", "resources": {"Панцирь 🦀": 4}},
+    {"name": "Щит кракена 🦑", "type": "shield", "resources": {"Щупальце 🐙": 3, "Панцирь 🦀": 2}},
+]
+
+ITEM_TYPES = {}
+for _n, _i in SHOP_ITEMS.items(): ITEM_TYPES[_n] = _i["type"]
+for _r in CRAFT_RECIPES: ITEM_TYPES[_r["name"]] = _r["type"]
+ITEM_TYPES.update({"Компас мудреца 🧭": "accessory", "Амулет глубин 🌊": "accessory", "Корона чемпиона 👑": "accessory"})
+
+SEAL_SKILLS_POOL = [
+    {"name": "Критический удар ⚡", "effect": "crit_15", "desc": "15% шанс двойного урона"},
+    {"name": "Толстая кожа 🛡️", "effect": "dmg_reduce_10", "desc": "-10% получаемого урона"},
+    {"name": "Вампиризм 🩸", "effect": "lifesteal_5", "desc": "Восстанавливает 5% урона"},
+    {"name": "Уклонение 💨", "effect": "dodge_10", "desc": "10% шанс увернуться"},
+    {"name": "Берсерк 😤", "effect": "berserk", "desc": "+50% урона при HP<30%"},
+    {"name": "Регенерация 💚", "effect": "regen", "desc": "+5 HP/час"},
+    {"name": "Шипы 🌵", "effect": "thorns", "desc": "Отражает 20% урона"},
+    {"name": "Двойной удар ⚔️", "effect": "double_strike", "desc": "10% шанс 2 атаки"},
+]
+
+DUNGEON_MONSTERS = [
+    {"name": "Фугу 🐡", "hp": 30, "str": 8, "def": 3, "drops": {"Жало 🐡": 0.7}},
+    {"name": "Креветка-ниндзя 🦐", "hp": 35, "str": 9, "def": 8, "drops": {"Панцирь 🦀": 0.5, "Чешуя 🐟": 0.3}},
+    {"name": "Акула 🦈", "hp": 50, "str": 12, "def": 5, "drops": {"Акулий зуб 🦈": 0.7}},
+    {"name": "Морской змей 🐍", "hp": 60, "str": 15, "def": 6, "drops": {"Чешуя 🐟": 0.7}},
+    {"name": "Кракен 🐙", "hp": 80, "str": 18, "def": 8, "drops": {"Щупальце 🐙": 0.7, "Жемчуг 🫧": 0.1}},
+    {"name": "Лобстер 🦞", "hp": 40, "str": 10, "def": 10, "drops": {"Панцирь 🦀": 0.7}},
+    {"name": "Кашалот 🐋", "hp": 120, "str": 20, "def": 12, "drops": {"Китовый ус 🐋": 0.6}},
+    {"name": "Электрический скат ⚡", "hp": 55, "str": 14, "def": 4, "drops": {"Чешуя 🐟": 0.5, "Жало 🐡": 0.3}},
+    {"name": "Гигантская медуза 🪼", "hp": 45, "str": 11, "def": 3, "drops": {"Жало 🐡": 0.6}},
+    {"name": "Морской дьявол 😈", "hp": 90, "str": 16, "def": 9, "drops": {"Жемчуг 🫧": 0.3, "Чешуя 🐟": 0.4}},
+]
+
+BOSSES = [
+    {"name": "Краб-босс 🦀", "drops": {"Панцирь 🦀": 0.8}}, {"name": "Акула 🦈", "drops": {"Акулий зуб 🦈": 0.8}},
+    {"name": "Осьминог 🐙", "drops": {"Щупальце 🐙": 0.8}}, {"name": "Морской ёжик 🦔", "drops": {"Жало 🐡": 0.8}},
+    {"name": "Кашалот 🐋", "drops": {"Китовый ус 🐋": 0.7}}, {"name": "Морской змей 🐍", "drops": {"Чешуя 🐟": 0.8}},
+    {"name": "Гигантский краб 🦀", "drops": {"Панцирь 🦀": 0.8, "Жемчуг 🫧": 0.15}},
+    {"name": "Электрический скат ⚡", "drops": {"Чешуя 🐟": 0.7, "Жало 🐡": 0.3}},
+    {"name": "Глубинный монстр 🌑", "drops": {"Жемчуг 🫧": 0.4, "Щупальце 🐙": 0.5}},
+    {"name": "Король креветок 🦐", "drops": {"Панцирь 🦀": 0.7, "Чешуя 🐟": 0.3}},
+]
+
+CLAN_DUNGEON_MONSTERS = [
+    {"name": "Страж глубин 🌊", "hp": 200, "str": 25, "def": 15}, {"name": "Древний краб 🦀", "hp": 250, "str": 30, "def": 20},
+    {"name": "Призрачная акула 👻", "hp": 300, "str": 35, "def": 18}, {"name": "Ледяной кальмар 🧊", "hp": 350, "str": 40, "def": 25},
+    {"name": "Гигантский спрут 🐙", "hp": 400, "str": 45, "def": 22}, {"name": "Морской дракон 🐉", "hp": 500, "str": 55, "def": 30},
+    {"name": "Бездонный левиафан 🐋", "hp": 600, "str": 60, "def": 35}, {"name": "Крашеный кракен 🦑", "hp": 700, "str": 70, "def": 40},
+    {"name": "Древний бог морей 🔱", "hp": 800, "str": 80, "def": 45}, {"name": "Повелитель бездны 🌑", "hp": 1000, "str": 100, "def": 60},
+]
+
+JOBS = [
+    {"name": "Рыболов 🎣", "desc": "Ловить рыбу", "reward_min": 20, "reward_max": 50, "cooldown_min": 30, "mood_cost": 5, "satiety_cost": 10},
+    {"name": "Почтальон 📬", "desc": "Разносить почту", "reward_min": 30, "reward_max": 60, "cooldown_min": 45, "mood_cost": 8, "satiety_cost": 15},
+    {"name": "Укротитель 🦭", "desc": "Укрощать морских зверей", "reward_min": 50, "reward_max": 100, "cooldown_min": 60, "mood_cost": 12, "satiety_cost": 20},
+    {"name": "Водолаз 🤿", "desc": "Исследовать глубины", "reward_min": 40, "reward_max": 80, "cooldown_min": 50, "mood_cost": 10, "satiety_cost": 18},
+    {"name": "Актёр 🎭", "desc": "Выступать в шоу", "reward_min": 35, "reward_max": 70, "cooldown_min": 40, "mood_cost": 6, "satiety_cost": 12},
+]
+
+FISH_TYPES = [
+    {"name": "Малёк 🐤", "reward": (3, 8), "correct": "Подсечь!"}, {"name": "Окунь 🐟", "reward": (8, 15), "correct": "Подсечь!"},
+    {"name": "Сёмга 🐠", "reward": (15, 25), "correct": "Ждать"}, {"name": "Золотая рыбка ✨", "reward": (30, 50), "correct": "Ждать"},
+    {"name": "Краб 🦀", "reward": (10, 20), "correct": "Отпустить"},
+]
+
+DAILY_EVENTS = [
+    {"event_type": "exp_boost", "effect": "1.5", "desc": "+50% к опыту!"},
+    {"event_type": "shop_discount", "effect": "0.2", "desc": "Скидки 20% в магазине!"},
+    {"event_type": "fishing_bonus", "effect": "2.0", "desc": "x2 рыбнеток за рыбалку!"},
+]
+
+FACTIONS = {
+    "hunters": {"name": "Стая охотников 🎯", "desc": "Бонус за бои"},
+    "fashion": {"name": "Клуб модников 💅", "desc": "Бонус к настроению"},
+    "explorers": {"name": "Гильдия исследователей 🧭", "desc": "Бонус к опыту"},
+}
+
+RANDOM_ENCOUNTERS = [
+    {"name": "Сундук на берегу! 📦", "type": "item", "chance": 0.12, "items": ["Чешуя 🐟", "Панцирь 🦀", "Акулий зуб 🦈", "Жемчуг 🫧"]},
+    {"name": "Злой краб! 🦀", "type": "battle", "chance": 0.10, "mood_cost": 10, "satiety_cost": 10, "drop": {"Панцирь 🦀": 0.5}},
+    {"name": "Дружелюбный дельфин 🐬", "type": "hint", "chance": 0.08, "fishnet_reward": (10, 30)},
+    {"name": "Затонувший корабль 🚢", "type": "fishnets", "chance": 0.06, "fishnet_reward": (30, 80)},
+]
+
+QUEST_TEMPLATES = [
+    {"type": "play", "target": 3, "reward": 30, "desc": "Поиграть 3 раза"}, {"type": "feed", "target": 3, "reward": 30, "desc": "Покормить 3 раза"},
+    {"type": "battle", "target": 1, "reward": 40, "desc": "Победить 1 босса"}, {"type": "dungeon", "target": 1, "reward": 50, "desc": "Пройти 1 подземелье"},
+    {"type": "shop", "target": 1, "reward": 20, "desc": "Купить 1 предмет"}, {"type": "work", "target": 1, "reward": 35, "desc": "Отправить на работу"},
+    {"type": "craft", "target": 1, "reward": 25, "desc": "Скрафтить 1 предмет"}, {"type": "fish", "target": 1, "reward": 25, "desc": "Поймать 1 рыбу"},
+]
+
+CLAN_EMOJIS = ["🦭", "🐋", "🦈", "🐙", "🦀", "🦐", "🦑", "🐬", "🐳", "🐢"]# ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (ИСПРАВЛЕННЫЕ) ====================
+
+def _safe_int(value, default=0):
+    """Безопасная конвертация значения в int. Защищает от None и мусора."""
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return default
 
 def get_player(uid):
-    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
-    c.execute("SELECT * FROM players WHERE user_id=?",(uid,));r=c.fetchone();conn.close();return r
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT * FROM players WHERE user_id=?", (uid,))
+    r = c.fetchone()
+    conn.close()
+    return r
 
 def get_seal(sid):
-    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
-    c.execute("SELECT * FROM seals WHERE seal_id=?",(sid,));r=c.fetchone();conn.close();return r
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT * FROM seals WHERE seal_id=?", (sid,))
+    r = c.fetchone()
+    conn.close()
+    return r
 
 def get_player_seals(uid):
-    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
-    c.execute("SELECT * FROM seals WHERE owner_id=?",(uid,));r=c.fetchall();conn.close();return r
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT * FROM seals WHERE owner_id=?", (uid,))
+    r = c.fetchall()
+    conn.close()
+    return r
 
 def get_seal_count(uid):
-    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
-    c.execute("SELECT COUNT(*) FROM seals WHERE owner_id=?",(uid,));r=c.fetchone();conn.close();return r[0] if r else 0
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM seals WHERE owner_id=?", (uid,))
+    r = c.fetchone()
+    conn.close()
+    return _safe_int(r) if r else 0
 
 def update_seal(sid, **kw):
-    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
-    s=", ".join([f"{k}=?" for k in kw]);v=list(kw.values())+[sid]
-    c.execute(f"UPDATE seals SET {s} WHERE seal_id=?",v);conn.commit();conn.close()
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    # Фильтруем только те ключи, которые реально есть в таблице (опционально, но безопасно)
+    s = ", ".join([f"{k}=?" for k in kw])
+    v = list(kw.values()) + [sid]
+    c.execute(f"UPDATE seals SET {s} WHERE seal_id=?", v)
+    conn.commit()
+    conn.close()
 
 def update_player(uid, **kw):
-    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
-    s=", ".join([f"{k}=?" for k in kw]);v=list(kw.values())+[uid]
-    c.execute(f"UPDATE players SET {s} WHERE user_id=?",v);conn.commit();conn.close()
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    s = ", ".join([f"{k}=?" for k in kw])
+    v = list(kw.values()) + [uid]
+    c.execute(f"UPDATE players SET {s} WHERE user_id=?", v)
+    conn.commit()
+    conn.close()
 
-def add_fishnets(uid,amt):
-    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
-    c.execute("UPDATE players SET fishnets=fishnets+? WHERE user_id=?",(amt,uid));conn.commit();conn.close()
+def add_fishnets(uid, amt):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("UPDATE players SET fishnets = COALESCE(fishnets, 0) + ? WHERE user_id=?", (amt, uid))
+    conn.commit()
+    conn.close()
 
 def get_fishnets(uid):
-    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
-    c.execute("SELECT fishnets FROM players WHERE user_id=?",(uid,));r=c.fetchone();conn.close();return r[0] if r else 0
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT fishnets FROM players WHERE user_id=?", (uid,))
+    r = c.fetchone()
+    conn.close()
+    return _safe_int(r) if r else 0
 
-def add_to_inv(uid,name,t,q=1):
-    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
-    c.execute("SELECT * FROM inventory WHERE user_id=? AND item_name=?",(uid,name));r=c.fetchone()
-    if r: c.execute("UPDATE inventory SET quantity=quantity+? WHERE user_id=? AND item_name=?",(q,uid,name))
-    else: c.execute("INSERT INTO inventory (user_id,item_name,item_type,quantity) VALUES (?,?,?,?)",(uid,name,t,q))
-    conn.commit();conn.close()
+def add_to_inv(uid, name, t, q=1):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT * FROM inventory WHERE user_id=? AND item_name=?", (uid, name))
+    r = c.fetchone()
+    if r:
+        c.execute("UPDATE inventory SET quantity = quantity + ? WHERE user_id=? AND item_name=?", (q, uid, name))
+    else:
+        c.execute("INSERT INTO inventory (user_id, item_name, item_type, quantity) VALUES (?, ?, ?, ?)", (uid, name, t, q))
+    conn.commit()
+    conn.close()
 
 def get_inv(uid):
-    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
-    c.execute("SELECT * FROM inventory WHERE user_id=? AND quantity>0",(uid,));r=c.fetchall();conn.close();return r
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT * FROM inventory WHERE user_id=? AND quantity > 0", (uid,))
+    r = c.fetchall()
+    conn.close()
+    return r
 
-def get_item_qty(uid,name):
-    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
-    c.execute("SELECT quantity FROM inventory WHERE user_id=? AND item_name=?",(uid,name));r=c.fetchone();conn.close();return r[0] if r else 0
+def get_item_qty(uid, name):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT quantity FROM inventory WHERE user_id=? AND item_name=?", (uid, name))
+    r = c.fetchone()
+    conn.close()
+    return _safe_int(r) if r else 0
 
-def remove_from_inv(uid,name,q=1):
-    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
-    c.execute("SELECT quantity FROM inventory WHERE user_id=? AND item_name=?",(uid,name));r=c.fetchone()
+def remove_from_inv(uid, name, q=1):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT quantity FROM inventory WHERE user_id=? AND item_name=?", (uid, name))
+    r = c.fetchone()
     if r:
-        nq=r[0]-q
-        if nq<=0: c.execute("DELETE FROM inventory WHERE user_id=? AND item_name=?",(uid,name))
-        else: c.execute("UPDATE inventory SET quantity=? WHERE user_id=? AND item_name=?",(nq,uid,name))
+        nq = r - q
+        if nq <= 0:
+            c.execute("DELETE FROM inventory WHERE user_id=? AND item_name=?", (uid, name))
+        else:
+            c.execute("UPDATE inventory SET quantity=? WHERE user_id=? AND item_name=?", (nq, uid, name))
         conn.commit()
     conn.close()
 
-def exp_for_level(lvl): return lvl*100+(lvl-1)*50
+def exp_for_level(lvl):
+    return lvl * 100 + (lvl - 1) * 50
 
 def get_exp_mult():
-    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
-    c.execute("SELECT effect FROM active_events WHERE active=1 AND event_type='exp_boost' AND expires_at>?",(datetime.now().isoformat(),))
-    r=c.fetchone();conn.close();return float(r[0]) if r else 1.0
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    now = datetime.now().isoformat()
+    c.execute("SELECT effect FROM active_events WHERE active=1 AND event_type='exp_boost' AND expires_at > ?", (now,))
+    r = c.fetchone()
+    conn.close()
+    if r:
+        try:
+            return float(r)
+        except ValueError:
+            return 1.0
+    return 1.0
 
 def get_shop_disc():
-    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
-    c.execute("SELECT effect FROM active_events WHERE active=1 AND event_type='shop_discount' AND expires_at>?",(datetime.now().isoformat(),))
-    r=c.fetchone();conn.close();return float(r[0]) if r else 0.0
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    now = datetime.now().isoformat()
+    c.execute("SELECT effect FROM active_events WHERE active=1 AND event_type='shop_discount' AND expires_at > ?", (now,))
+    r = c.fetchone()
+    conn.close()
+    if r:
+        try:
+            return float(r)
+        except ValueError:
+            return 0.0
+    return 0.0
 
 def get_fish_bonus():
-    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
-    c.execute("SELECT effect FROM active_events WHERE active=1 AND event_type='fishing_bonus' AND expires_at>?",(datetime.now().isoformat(),))
-    r=c.fetchone();conn.close();return float(r[0]) if r else 1.0
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    now = datetime.now().isoformat()
+    c.execute("SELECT effect FROM active_events WHERE active=1 AND event_type='fishing_bonus' AND expires_at > ?", (now,))
+    r = c.fetchone()
+    conn.close()
+    if r:
+        try:
+            return float(r)
+        except ValueError:
+            return 1.0
+    return 1.0
 
 def get_seal_skills(sid):
-    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
-    c.execute("SELECT skill_name,skill_effect FROM seal_skills WHERE seal_id=?",(sid,));r=c.fetchall();conn.close()
-    return [{"name":row[0],"effect":row[1]} for row in r]
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT skill_name, skill_effect FROM seal_skills WHERE seal_id=?", (sid,))
+    r = c.fetchall()
+    conn.close()
+    return [{"name": row, "effect": row} for row in r]
 
 def uid_owner(sid):
-    seal=get_seal(sid);return seal[1] if seal else 0
+    seal = get_seal(sid)
+    return seal if seal else 0
 
 def check_levelup(sid):
-    results=[]
+    results = []
     while True:
-        seal=get_seal(sid)
-        if not seal: break
-        lvl,exp=seal[9],seal[10];needed=exp_for_level(lvl)
-        if exp>=needed:
-            nl=lvl+1;ne=exp-needed
-            update_seal(sid,level=nl,exp=ne,strength=seal[7]+random.randint(2,5),
-                       defense=seal[8]+random.randint(1,3),
-                       max_health=seal[4]+random.randint(10,20),
-                       health=seal[4]+random.randint(10,20))
+        seal = get_seal(sid)
+        if not seal:
+            break
+        
+        # ИСПРАВЛЕНИЕ: Безопасное получение данных по индексам
+        # Структура seals: 0=id, 1=owner, 2=name, 3=hp, 4=max_hp, 5=mood, 6=satiety, 7=str, 8=def, 9=lvl, 10=exp...
+        if len(seal) < 11:
+            print(f"⚠️ Ошибка структуры БД для тюленя {sid}: недостаточно колонок")
+            break
+            
+        lvl = _safe_int(seal)
+        exp = _safe_int(seal)
+        needed = exp_for_level(lvl)
+        
+        if exp >= needed:
+            nl = lvl + 1
+            ne = exp - needed
+            
+            # Базовые статы растут
+            str_inc = random.randint(2, 5)
+            def_inc = random.randint(1, 3)
+            hp_inc = random.randint(10, 20)
+            
+            update_seal(
+                sid,
+                level=nl,
+                exp=ne,
+                strength=seal + str_inc,
+                defense=seal + def_inc,
+                max_health=seal + hp_inc,
+                health=seal + hp_inc  # Лечим при левел апе
+            )
             results.append(nl)
-            if nl%5==0:
-                skill=random.choice(SEAL_SKILLS_POOL)
-                conn=sqlite3.connect(DB_PATH);c=conn.cursor()
-                c.execute("INSERT INTO seal_skills (seal_id,skill_name,skill_effect,acquired_at) VALUES (?,?,?,?)",
-                          (sid,skill["name"],skill["effect"],datetime.now().isoformat()))
-                conn.commit();conn.close()
-            uid=uid_owner(sid);update_quest_chain(uid,"reach_level",nl)
-        else: break
+            
+            # Шанс получить навык каждые 5 уровней
+            if nl % 5 == 0:
+                skill = random.choice(SEAL_SKILLS_POOL)
+                conn = sqlite3.connect(DB_PATH)
+                c = conn.cursor()
+                c.execute(
+                    "INSERT INTO seal_skills (seal_id, skill_name, skill_effect, acquired_at) VALUES (?, ?, ?, ?)",
+                    (sid, skill["name"], skill["effect"], datetime.now().isoformat())
+                )
+                conn.commit()
+                conn.close()
+            
+            uid = uid_owner(sid)
+            if uid:
+                update_quest_chain(uid, "reach_level", nl)
+        else:
+            break
+            
     return results[-1] if results else False
 
 def get_effective_stats(sid):
-    seal=get_seal(sid)
-    if not seal: return 0,0,0
-    bs,bd,bh=seal[7],seal[8],seal[4];sb=db=hb=0
-    for slot in [seal[13],seal[14],seal[15],seal[16]]:
-        if slot and slot in ITEM_BONUSES:
-            b=ITEM_BONUSES[slot];sb+=b.get("str",0);db+=b.get("def",0);hb+=b.get("hp",0)
-    return bs+sb,bd+db,bh+hb
+    """
+    Возвращает кортеж (сила, защита, макс_здоровье).
+    Теперь функция надежно считает бонусы от экипировки и защищает от ошибок.
+    """
+    seal = get_seal(sid)
+    if not seal:
+        return 0, 0, 0
+    
+    # Проверка структуры данных
+    if len(seal) < 18:
+        print(f"⚠️ Ошибка: Недостаточно данных для тюленя {sid}. Требуется минимум 18 колонок.")
+        return 0, 0, 0
+
+    # Распаковка с безопасными значениями по умолчанию
+    # Индексы: 7=str, 8=def, 4=max_hp
+    base_strength = _safe_int(seal)
+    base_defense = _safe_int(seal)
+    base_max_hp = _safe_int(seal)
+    
+    # Слоты экипировки: 13=weapon, 14=armor, 15=helmet, 16=shield, 17=accessory
+    slots = [seal, seal, seal, seal, seal]
+    
+    bonus_str = 0
+    bonus_def = 0
+    bonus_hp = 0
+    
+    for item_name in slots:
+        if not item_name:
+            continue
+        
+        # Проверка наличия предмета в базе бонусов
+        if item_name in ITEM_BONUSES:
+            bonuses = ITEM_BONUSES[item_name]
+            bonus_str += _safe_int(bonuses.get("str", 0))
+            bonus_def += _safe_int(bonuses.get("def", 0))
+            bonus_hp += _safe_int(bonuses.get("hp", 0))
+        else:
+            # Если предмета нет в словаре (опечатка в БД или новый предмет), логируем, но не ломаем код
+            pass 
+
+    total_str = base_strength + bonus_str
+    total_def = base_defense + bonus_def
+    total_hp = base_max_hp + bonus_hp
+    
+    return total_str, total_def, total_hp
 
 def get_mood_bonus(sid):
-    seal=get_seal(sid);return ACCESSORY_BONUSES.get(seal[17],0) if seal else 0
+    seal = get_seal(sid)
+    if not seal or len(seal) < 18:
+        return 0
+    
+    accessory = seal
+    if not accessory:
+        return 0
+        
+    return _safe_int(ACCESSORY_BONUSES.get(accessory, 0))
 
-def can_craft(uid,recipe):
-    return all(get_item_qty(uid,r)>=a for r,a in recipe["resources"].items())
+def can_craft(uid, recipe):
+    return all(get_item_qty(uid, r) >= a for r, a in recipe["resources"].items())
 
 def get_faction_disc(uid):
-    p=get_player(uid)
-    if not p or not p[5]: return 0.0
-    rep=p[6]
-    if rep>=100: return 0.30
-    elif rep>=50: return 0.15
-    elif rep>=20: return 0.05
+    p = get_player(uid)
+    if not p or len(p) < 7 or not p:
+        return 0.0
+    
+    rep = _safe_int(p)
+    if rep >= 100:
+        return 0.30
+    elif rep >= 50:
+        return 0.15
+    elif rep >= 20:
+        return 0.05
     return 0.0
 
-def add_faction_rep(uid,amt):
-    p=get_player(uid)
-    if not p or not p[5]: return
-    update_player(uid,faction_rep=p[6]+amt)
+def add_faction_rep(uid, amt):
+    p = get_player(uid)
+    if not p or len(p) < 7 or not p:
+        return
+    
+    current_rep = _safe_int(p)
+    update_player(uid, faction_rep=current_rep + amt)
 
 def get_dungeon_monster(floor):
-    idx=(floor-1)%len(DUNGEON_MONSTERS);m=DUNGEON_MONSTERS[idx].copy()
-    m["hp"]+=floor*15;m["str"]+=floor*3;m["def"]+=floor*2;return m
+    idx = (floor - 1) % len(DUNGEON_MONSTERS)
+    m = DUNGEON_MONSTERS[idx].copy()
+    
+    # Масштабирование характеристик
+    m["hp"] = _safe_int(m.get("hp", 0)) + (floor * 15)
+    m["str"] = _safe_int(m.get("str", 0)) + (floor * 3)
+    m["def"] = _safe_int(m.get("def", 0)) + (floor * 2)
+    return m
 
-def process_drops(uid,drops):
-    d=[]
-    for res,ch in drops.items():
-        if random.random()<ch:
-            q=random.randint(1,2);add_to_inv(uid,res,"resource",q);d.append(f"{res} x{q}")
+def process_drops(uid, drops):
+    d = []
+    if not drops:
+        return d
+        
+    for res, ch in drops.items():
+        if random.random() < ch:
+            q = random.randint(1, 2)
+            add_to_inv(uid, res, "resource", q)
+            d.append(f"{res} x{q}")
     return d
 
 def get_married_ids():
-    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
     c.execute("SELECT seal1_id FROM marriages UNION SELECT seal2_id FROM marriages")
-    ids=set(r[0] for r in c.fetchall());conn.close();return ids
+    ids = set(r for r in c.fetchall())
+    conn.close()
+    return ids
 
-def get_seal_status(seal,married):
-    if seal[11]==1: return "🍼"
-    if seal[3]<=0: return "💀"
-    if seal[5]<30 or seal[6]<20: return "😴"
-    if seal[0] in married: return "❤️"
-    wc=seal[18]
+def get_seal_status(seal, married):
+    if not seal:
+        return "❓"
+    
+    # Проверка на младенца
+    if _safe_int(seal) == 1:
+        return "🍼"
+    
+    # Проверка на смерть
+    if _safe_int(seal) <= 0:
+        return "💀"
+    
+    mood = _safe_int(seal)
+    satiety = _safe_int(seal)
+    
+    # Проверка на плохое состояние
+    if mood < 30 or satiety < 20:
+        return "😴"
+    
+    # Проверка на брак
+    if len(seal) > 0 and seal in married:
+        return "❤️"
+    
+    # Проверка на работу
+    wc = seal
     if wc:
         try:
-            cm=seal[21] if seal[21] else 30
-            if datetime.now()-datetime.fromisoformat(wc)<timedelta(minutes=cm): return "💼"
-        except: pass
-    if seal[5]>=50 and seal[6]>=50: return "🎮"
+            cm = _safe_int(seal) if len(seal) > 21 else 30
+            if datetime.now() - datetime.fromisoformat(wc) < timedelta(minutes=cm):
+                return "💼"
+        except Exception:
+            pass
+    
+    # Хорошее настроение и сытость
+    if mood >= 50 and satiety >= 50:
+        return "🎮"
+        
     return "🦭"
 
 def get_active_event_text():
-    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
-    c.execute("SELECT event_type FROM active_events WHERE active=1 AND expires_at>?",(datetime.now().isoformat(),))
-    r=c.fetchone();conn.close()
-    if not r: return None
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    now = datetime.now().isoformat()
+    c.execute("SELECT event_type FROM active_events WHERE active=1 AND expires_at > ?", (now,))
+    r = c.fetchone()
+    conn.close()
+    
+    if not r:
+        return None
+    
     for ev in DAILY_EVENTS:
-        if ev["event_type"]==r[0]: return ev["desc"]
+        if ev["event_type"] == r:
+            return ev["desc"]
     return None
 
 def get_todays_event():
-    seed=int(date.today().strftime("%Y%m%d"));return random.Random(seed).choice(DAILY_EVENTS)
+    seed = int(date.today().strftime("%Y%m%d"))
+    return random.Random(seed).choice(DAILY_EVENTS)
 
 def check_vote_result():
-    today=date.today().isoformat();conn=sqlite3.connect(DB_PATH);c=conn.cursor()
-    c.execute("SELECT vote,COUNT(*) FROM votes WHERE date=? GROUP BY vote",(today,));rows=c.fetchall();conn.close()
-    y=n=0
-    for v,cnt in rows:
-        if v=="yes": y=cnt
-        elif v=="no": n=cnt
-    return (y+n)>=3 and y>n
+    today = date.today().isoformat()
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT vote, COUNT(*) FROM votes WHERE date=? GROUP BY vote", (today,))
+    rows = c.fetchall()
+    conn.close()
+    
+    y = n = 0
+    for v, cnt in rows:
+        if v == "yes":
+            y = cnt
+        elif v == "no":
+            n = cnt
+            
+    return (y + n) >= 3 and y > n
 
-def activate_event(et,eff):
-    exp=datetime.now()+timedelta(hours=24);conn=sqlite3.connect(DB_PATH);c=conn.cursor()
+def activate_event(et, eff):
+    exp = datetime.now() + timedelta(hours=24)
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
     c.execute("UPDATE active_events SET active=0 WHERE active=1")
-    c.execute("INSERT INTO active_events (event_type,effect,expires_at,active) VALUES (?,?,?,1)",(et,eff,exp.isoformat()))
-    conn.commit();conn.close()
+    c.execute("INSERT INTO active_events (event_type, effect, expires_at, active) VALUES (?, ?, ?, 1)", (et, eff, exp.isoformat()))
+    conn.commit()
+    conn.close()
 
 def get_quest_chains():
-    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
-    c.execute("SELECT * FROM quest_chains");r=c.fetchall();conn.close();return r
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT * FROM quest_chains")
+    r = c.fetchall()
+    conn.close()
+    return r
 
-def get_player_chain(uid,chain_id):
-    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
-    c.execute("SELECT * FROM player_quest_chains WHERE user_id=? AND chain_id=?",(uid,chain_id));r=c.fetchone();conn.close();return r
+def get_player_chain(uid, chain_id):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT * FROM player_quest_chains WHERE user_id=? AND chain_id=?", (uid, chain_id))
+    r = c.fetchone()
+    conn.close()
+    return r
 
-def update_quest_chain(uid,step_type,amount=1):
-    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
-    c.execute("SELECT id,chain_id,current_step,step_progress,completed FROM player_quest_chains WHERE user_id=? AND completed=0",(uid,))
-    for pc_id,cid,cs,sp,comp in c.fetchall():
-        c2=conn.cursor()
-        c2.execute("SELECT steps_json FROM quest_chains WHERE chain_id=?",(cid,))
-        chain=c2.fetchone()
-        if not chain: continue
-        steps=json.loads(chain[0])
-        if cs<len(steps) and steps[cs]["type"]==step_type:
-            ns=sp+1
-            if ns>=steps[cs]["target"]:
-                ns=0;cs2=cs+1
-                if cs2>=len(steps):
-                    c2.execute("UPDATE player_quest_chains SET completed=1 WHERE id=?",(pc_id,))
+def update_quest_chain(uid, step_type, amount=1):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT id, chain_id, current_step, step_progress, completed FROM player_quest_chains WHERE user_id=? AND completed=0", (uid,))
+    
+    for pc_id, cid, cs, sp, comp in c.fetchall():
+        c2 = conn.cursor()
+        c2.execute("SELECT steps_json FROM quest_chains WHERE chain_id=?", (cid,))
+        chain = c2.fetchone()
+        
+        if not chain:
+            continue
+            
+        try:
+            steps = json.loads(chain)
+        except json.JSONDecodeError:
+            continue
+            
+        if cs < len(steps) and steps[cs]["type"] == step_type:
+            ns = sp + 1
+            if ns >= steps[cs]["target"]:
+                ns = 0
+                cs2 = cs + 1
+                if cs2 >= len(steps):
+                    c2.execute("UPDATE player_quest_chains SET completed=1 WHERE id=?", (pc_id,))
                 else:
-                    c2.execute("UPDATE player_quest_chains SET current_step=?,step_progress=0 WHERE id=?",(cs2,pc_id))
+                    c2.execute("UPDATE player_quest_chains SET current_step=?, step_progress=0 WHERE id=?", (cs2, pc_id))
             else:
-                c2.execute("UPDATE player_quest_chains SET step_progress=? WHERE id=?",(ns,pc_id))
-    conn.commit();conn.close()
+                c2.execute("UPDATE player_quest_chains SET step_progress=? WHERE id=?", (ns, pc_id))
+                
+    conn.commit()
+    conn.close()
 
 def get_clan_by_user(uid):
-    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
-    c.execute("SELECT clans.* FROM clans JOIN clan_members ON clans.clan_id=clan_members.clan_id WHERE clan_members.user_id=?",(uid,))
-    r=c.fetchone();conn.close();return r
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT clans.* FROM clans JOIN clan_members ON clans.clan_id=clan_members.clan_id WHERE clan_members.user_id=?", (uid,))
+    r = c.fetchone()
+    conn.close()
+    return r
 
 def get_clan_members(cid):
-    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
-    c.execute("SELECT user_id FROM clan_members WHERE clan_id=?",(cid,));r=c.fetchall();conn.close();return [row[0] for row in r]
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT user_id FROM clan_members WHERE clan_id=?", (cid,))
+    r = c.fetchall()
+    conn.close()
+    return [row for row in r]
 
 def trigger_encounter(uid):
-    enc=random.choice(RANDOM_ENCOUNTERS)
-    if random.random()>enc["chance"]: return None
-    msg=f"✨ Случайное событие!\n{enc['name']}\n"
-    if enc["type"]=="item":
-        item=random.choice(enc["items"]);add_to_inv(uid,item,"resource",1);msg+=f"Получен предмет: {item}!"
-    elif enc["type"]=="fishnets":
-        r=random.randint(*enc["fishnet_reward"]);add_fishnets(uid,r);msg+=f"Найдено 🐟{r}!"
-    elif enc["type"]=="battle":
-        seals=get_player_seals(uid)
+    enc = random.choice(RANDOM_ENCOUNTERS)
+    if random.random() > enc["chance"]:
+        return None
+        
+    msg = f"✨ Случайное событие!\n{enc['name']}\n"
+    
+    if enc["type"] == "item":
+        item = random.choice(enc["items"])
+        add_to_inv(uid, item, "resource", 1)
+        msg += f"Получен предмет: {item}!"
+        
+    elif enc["type"] == "fishnets":
+        r = random.randint(*enc["fishnet_reward"])
+        add_fishnets(uid, r)
+        msg += f"Найдено 🐟{r}!"
+        
+    elif enc["type"] == "battle":
+        seals = get_player_seals(uid)
         if seals:
-            s=seals[0];update_seal(s[0],mood=max(0,s[5]-enc["mood_cost"]),satiety=max(0,s[6]-enc["satiety_cost"]))
-            msg+=f"Тюлень потерял настроение и сытость!"
+            s = seals
+            # Безопасное обновление статов
+            new_mood = max(0, _safe_int(s) - enc.get("mood_cost", 0))
+            new_satiety = max(0, _safe_int(s) - enc.get("satiety_cost", 0))
+            update_seal(s, mood=new_mood, satiety=new_satiety)
+            msg += f"Тюлень потерял настроение и сытость!"
+            
             if "drop" in enc:
-                d=process_drops(uid,enc["drop"])
-                if d: msg+=f"\nНо добыча: {', '.join(d)}"
-    elif enc["type"]=="hint":
-        r=random.randint(*enc["fishnet_reward"]);add_fishnets(uid,r);msg+=f"Дельфин подсказал секрет! 🐟{r}"
+                d = process_drops(uid, enc["drop"])
+                if d:
+                    msg += f"\nНо добыча: {', '.join(d)}"
+                    
+    elif enc["type"] == "hint":
+        r = random.randint(*enc["fishnet_reward"])
+        add_fishnets(uid, r)
+        msg += f"Дельфин подсказал секрет! 🐟{r}"
+        
     return msg
 
-def create_duel(cid,oid,csid):
-    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
-    c.execute("INSERT INTO duels (challenger_id,opponent_id,challenger_seal_id,status,created_at) VALUES (?,?,?,'pending',?)",
-              (cid,oid,csid,datetime.now().isoformat()));conn.commit()
-    did=c.lastrowid;conn.close();return did
+def create_duel(cid, oid, csid):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
+        "INSERT INTO duels (challenger_id, opponent_id, challenger_seal_id, status, created_at) VALUES (?, ?, ?, 'pending', ?)",
+        (cid, oid, csid, datetime.now().isoformat())
+    )
+    conn.commit()
+    did = c.lastrowid
+    conn.close()
+    return did
 
 def get_duel(did):
-    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
-    c.execute("SELECT * FROM duels WHERE duel_id=?",(did,));r=c.fetchone();conn.close();return r
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT * FROM duels WHERE duel_id=?", (did,))
+    r = c.fetchone()
+    conn.close()
+    return r
+
 
 # ==================== ЕЖЕДНЕВНЫЕ ЗАДАНИЯ (ОТДЕЛЬНО ОТ ЦЕПОЧЕК) ====================
 def generate_daily_quests(uid):
@@ -659,10 +999,17 @@ def seal_selected(call,sid=None):
     uid=call.from_user.id;fn=get_fishnets(uid)
     es,ed,eh=get_effective_stats(sid);mb=get_mood_bonus(sid)
     skills=get_seal_skills(sid)
-    t=f"🦭 *{seal[2]}*\n🐟 {fn}\n\nУр:{seal[9]} (оп:{seal[10]}/{exp_for_level(seal[9])})\n"
-    t+=f"❤️ {seal[3]}/{seal[4]}\n😊 {seal[5]}"
+    t=f"🦭 *{seal[2]}*\n🐟 Рыбнетки: {fn}\n\n📊 Ур:{seal[9]} (оп:{seal[10]}/{exp_for_level(seal[9])})\n"
+    t+=f"❤️ Здоровье: {seal[3]}/{seal[4]}"
+    if eh!=seal[4]: t+=f" (с экип: {eh})"
+    t+=f"\n😊 Настроение: {seal[5]}"
     if mb>0: t+=f" (+{mb})"
-    t+=f"\n🍖 {seal[6]}\n💪 {seal[7]} (э:{es})\n🛡️ {seal[8]} (э:{ed})\n"
+    t+=f"\n🍖 Сытость: {seal[6]}"
+    t+=f"\n💪 Сила: {seal[7]}"
+    if es!=seal[7]: t+=f" (с экип: {es})"
+    t+=f"\n🛡️ Защита: {seal[8]}"
+    if ed!=seal[8]: t+=f" (с экип: {ed})"
+    t+="\n"
     if skills:
         t+=f"\n*Навыки:*\n"
         for sk in skills: t+=f"  {sk['name']}\n"
@@ -672,7 +1019,7 @@ def seal_selected(call,sid=None):
     if seal[15]: eq.append(f"🪖{seal[15]}")
     if seal[16]: eq.append(f"🛡️{seal[16]}")
     if seal[17]: eq.append(f"🎀{seal[17]}")
-    t+=f"\nЭкип: {', '.join(eq) if eq else 'нет'}\n"
+    t+=f"\n🎒 Экип: {', '.join(eq) if eq else 'нет'}\n"
     if seal[11]==1: t+="\n🍼 Тюленёнок!\n"
     m=types.InlineKeyboardMarkup(row_width=2)
     m.add(types.InlineKeyboardButton("🍖 Кормить",callback_data=f"feed_{sid}"),
@@ -822,6 +1169,7 @@ def shop_buy(call):
     add_fishnets(uid,-pr);add_to_inv(uid,name,info["type"])
     update_quest_progress(uid,"shop",1)
     bot.answer_callback_query(call.id,f"Куплено: {name} за 🐟{pr}!")
+
 
 # ==================== КРАФТ ====================
 @bot.message_handler(commands=['craft'])
@@ -992,8 +1340,8 @@ def dng_start(call):
     conn.commit();conn.close();dng_floor(call,sid,1)
 
 def dng_floor(call,sid,fl):
-    seal=get_seal(sid);mon=get_dungeon_monster(fl);es,ed,_=get_effective_stats(sid)
-    t=f"🏰 *Этаж {fl}/5*\n\n🦭 {seal[2]}: ❤️{seal[3]} 💪{es} 🛡️{ed}\n{mon['name']}: ❤️{mon['hp']} 💪{mon['str']} 🛡️{mon['def']}\n"
+    seal=get_seal(sid);mon=get_dungeon_monster(fl);es,ed,eh=get_effective_stats(sid)
+    t=f"🏰 *Этаж {fl}/5*\n\n🦭 {seal[2]}: ❤️{eh} 💪{es} 🛡️{ed}\n{mon['name']}: ❤️{mon['hp']} 💪{mon['str']} 🛡️{mon['def']}\n"
     m=types.InlineKeyboardMarkup()
     m.add(types.InlineKeyboardButton("⚔️ Атаковать",callback_data=f"da_{sid}_{fl}"))
     m.add(types.InlineKeyboardButton("🏃 Сбежать",callback_data=f"df_{sid}_{fl}"))
@@ -1004,7 +1352,7 @@ def dng_atk(call):
     uid=call.from_user.id;p=call.data.split("_");sid=int(p[2]);fl=int(p[3])
     seal=get_seal(sid)
     if not seal: return
-    mon=get_dungeon_monster(fl);es,ed,_=get_effective_stats(sid);shp=seal[3]
+    mon=get_dungeon_monster(fl);es,ed,eh=get_effective_stats(sid);shp=eh
     log=[f"⚔️ Этаж {fl}: {seal[2]} vs {mon['name']}"]
     while shp>0 and mon["hp"]>0:
         d=max(1,es-mon["def"]+random.randint(-2,5));mon["hp"]-=d
@@ -1049,7 +1397,10 @@ def dng_flee(call):
     uid=call.from_user.id;conn=sqlite3.connect(DB_PATH);c=conn.cursor()
     c.execute("UPDATE dungeon_runs SET active=0 WHERE user_id=?",(uid,));conn.commit();conn.close()
     bot.edit_message_text("🏃 Сбежали.",call.message.chat.id,call.message.message_id)
+
 # ==================== РЫБАЛКА ====================
+fish_active = {}
+
 @bot.message_handler(commands=['fish'])
 @bot.message_handler(func=lambda m:m.text=="🎣 Рыбалка")
 def cmd_fish(message):
@@ -1068,8 +1419,10 @@ def cmd_fish(message):
     m=types.InlineKeyboardMarkup(row_width=3)
     for o in opts: m.add(types.InlineKeyboardButton(o,callback_data=f"fh_{o}_{fish['name']}"))
     msg=bot.send_message(uid,t,parse_mode='Markdown',reply_markup=m)
+    fish_active[uid]=True
     def timeout():
         time.sleep(5)
+        if not fish_active.get(uid): return
         try: bot.edit_message_text(f"⏰ Время! {fish['name']} уплыл.",msg.chat.id,msg.message_id)
         except: pass
         update_player(uid,fish_cooldown=datetime.now().isoformat())
@@ -1077,7 +1430,11 @@ def cmd_fish(message):
 
 @bot.callback_query_handler(func=lambda c:c.data.startswith("fh_"))
 def fish_cb(call):
-    uid=call.from_user.id;p=call.data.split("_",2);act,fn=p[1],p[2]
+    uid=call.from_user.id
+    if not fish_active.get(uid):
+        bot.answer_callback_query(call.id,"Время вышло!");return
+    fish_active[uid]=False
+    p=call.data.split("_",2);act,fn=p[1],p[2]
     fish=next((f for f in FISH_TYPES if f["name"]==fn),None)
     if not fish: bot.answer_callback_query(call.id,"Истекла!");return
     bonus=get_fish_bonus();rm,rx=int(fish["reward"][0]*bonus),int(fish["reward"][1]*bonus)
@@ -1153,7 +1510,7 @@ def duel_seal(call):
     if not cseal or not oseal: bot.answer_callback_query(call.id,"Тюлень не найден!");return
     ces,ced,ceh=get_effective_stats(csid);oes,oed,oeh=get_effective_stats(osid)
     csk=get_seal_skills(csid);osk=get_seal_skills(osid)
-    chp=cseal[3];ohp=oseal[3]
+    chp=ceh;ohp=oeh
     log=[f"🤺 *Дуэль: {cseal[2]} vs {oseal[2]}*\n",
          f"{cseal[2]}: ❤️{ceh} 💪{ces} 🛡️{ced}",f"{oseal[2]}: ❤️{oeh} 💪{oes} 🛡️{oed}\n"]
     rnd=0;rw=0
@@ -1183,6 +1540,8 @@ def duel_seal(call):
         log.append(f"💰 Награда: 🐟{rw}")
         update_quest_chain(duel[2],"duel_win",1)
     else: log.append("\n🤝 Ничья!")
+    update_seal(csid,health=max(1,chp))
+    update_seal(osid,health=max(1,ohp))
     conn=sqlite3.connect(DB_PATH);c=conn.cursor()
     c.execute("UPDATE duels SET status='completed',winner_id=?,reward=? WHERE duel_id=?",(winner_id,rw,did))
     conn.commit();conn.close()
@@ -1201,10 +1560,8 @@ def duel_reject(call):
     except: pass
 
 # ==================== КВЕСТОВЫЕ ЦЕПОЧКИ ====================
-@bot.message_handler(commands=['questchain'])
-@bot.message_handler(func=lambda m:m.text=="📚 Цепочки")
-def cmd_questchain(message):
-    uid=message.from_user.id;chains=get_quest_chains()
+def show_quest_chains(uid,chat_id,message_id=None):
+    chains=get_quest_chains()
     t="📚 *Квестовые цепочки*\n\n";m=types.InlineKeyboardMarkup()
     for ch in chains:
         cid,name,story=ch[0],ch[1],ch[2]
@@ -1217,7 +1574,17 @@ def cmd_questchain(message):
             t+=f"⬜ *{name}*\n  {story}\n"
             m.add(types.InlineKeyboardButton(f"Начать: {name}",callback_data=f"qcs_{cid}"))
         t+="\n"
-    bot.send_message(uid,t,parse_mode='Markdown',reply_markup=m)
+    if message_id:
+        try: bot.edit_message_text(t,chat_id,message_id,parse_mode='Markdown',reply_markup=m)
+        except: bot.send_message(chat_id,t,parse_mode='Markdown',reply_markup=m)
+    else:
+        bot.send_message(chat_id,t,parse_mode='Markdown',reply_markup=m)
+
+@bot.message_handler(commands=['questchain'])
+@bot.message_handler(func=lambda m:m.text=="📚 Цепочки")
+def cmd_questchain(message):
+    uid=message.from_user.id
+    show_quest_chains(uid,message.chat.id)
 
 @bot.callback_query_handler(func=lambda c:c.data.startswith("qcs_"))
 def qc_start(call):
@@ -1226,7 +1593,7 @@ def qc_start(call):
     c.execute("INSERT OR IGNORE INTO player_quest_chains (user_id,chain_id,current_step,step_progress,completed) VALUES (?,?,0,0,0)",(uid,cid))
     conn.commit();conn.close()
     bot.answer_callback_query(call.id,"Цепочка начата!")
-    cmd_questchain(call.message)
+    show_quest_chains(uid,call.message.chat.id,call.message.message_id)
 
 # ==================== БИРЖА ====================
 @bot.message_handler(commands=['trade'])
@@ -1327,6 +1694,7 @@ def trade_back(call):
     m.add(types.InlineKeyboardButton("📋 Активные",callback_data="trl_0"))
     m.add(types.InlineKeyboardButton("📦 Мои",callback_data="trm"))
     bot.edit_message_text("📦 *Биржа*",call.message.chat.id,call.message.message_id,parse_mode='Markdown',reply_markup=m)
+
 
 # ==================== КЛАНЫ ====================
 @bot.message_handler(commands=['clan'])
@@ -1440,14 +1808,18 @@ def clan_dng_atk(call):
     mon=CLAN_DUNGEON_MONSTERS[fl-1].copy()
     ts=sum(get_effective_stats(s[0])[0] for s in all_seals)
     td=sum(get_effective_stats(s[0])[1] for s in all_seals)
-    thp=sum(s[3] for s in all_seals)
+    seal_hp={s[0]:s[3] for s in all_seals}
+    thp=sum(seal_hp.values())
     log=[f"🏰 Этаж {fl}: {len(all_seals)} тюленей vs {mon['name']}"]
     while thp>0 and mon["hp"]>0:
         d=max(1,ts-mon["def"]+random.randint(-5,10));mon["hp"]-=d
         log.append(f"Тюлени →{d} (монстр {max(0,mon['hp'])}❤️)")
         if mon["hp"]<=0: break
         dm=max(1,mon["str"]-td+random.randint(-2,6))
-        target=random.choice(all_seals);update_seal(target[0],health=max(1,target[3]-dm))
+        target=random.choice(all_seals)
+        new_hp=max(1,seal_hp[target[0]]-dm)
+        seal_hp[target[0]]=new_hp
+        update_seal(target[0],health=new_hp)
         thp-=dm;log.append(f"{mon['name']} →{target[2]} на {dm} (осталось {max(0,thp)}❤️)")
     if mon["hp"]<=0:
         log.append("\n✅ Монстр повержен!")
@@ -1510,6 +1882,7 @@ def faction_join(call):
     if fid not in FACTIONS: bot.answer_callback_query(call.id,"Не найдена!");return
     update_player(call.from_user.id,faction=fid,faction_rep=0)
     bot.answer_callback_query(call.id,f"Вступили: {FACTIONS[fid]['name']}!")
+
 
 # ==================== ГОЛОСОВАНИЕ ====================
 @bot.message_handler(commands=['vote'])
@@ -1601,16 +1974,13 @@ def marry_do(call):
     bot.edit_message_text(msg,call.message.chat.id,call.message.message_id,parse_mode='Markdown')
 
 # ==================== ЕЖЕДНЕВНЫЕ ЗАДАНИЯ (ОТДЕЛЬНО ОТ ЦЕПОЧЕК) ====================
-@bot.message_handler(commands=['quests'])
-@bot.message_handler(func=lambda m:m.text=="📋 Задания")
-def menu_quests(message):
-    uid=message.from_user.id
+def show_quests(uid,chat_id,message_id=None):
     try:
         generate_daily_quests(uid)
         quests=get_daily_quests(uid)
     except Exception as e:
-        bot.send_message(uid,f"⚠️ Ошибка БД: {e}");return
-    if not quests: bot.send_message(uid,"Задания не сгенерированы.");return
+        bot.send_message(chat_id,f"⚠️ Ошибка БД: {e}");return
+    if not quests: bot.send_message(chat_id,"Задания не сгенерированы.");return
     t="📋 *Ежедневные задания*\n\n";m=types.InlineKeyboardMarkup()
     qd={q["type"]:q["desc"] for q in QUEST_TEMPLATES}
     for q in quests:
@@ -1621,8 +1991,22 @@ def menu_quests(message):
             t+=f"  🎁 {d} — {s} (🐟{qrew}) — готово!\n"
             m.add(types.InlineKeyboardButton(f"Забрать 🐟{qrew}",callback_data=f"qclaim_{qid}"))
         else: t+=f"  ⬜ {d} — {s} (🐟{qrew})\n"
-    if m.keyboard: bot.send_message(uid,t,parse_mode='Markdown',reply_markup=m)
-    else: bot.send_message(uid,t,parse_mode='Markdown')
+    if m.keyboard:
+        if message_id:
+            try: bot.edit_message_text(t,chat_id,message_id,parse_mode='Markdown',reply_markup=m)
+            except: bot.send_message(chat_id,t,parse_mode='Markdown',reply_markup=m)
+        else: bot.send_message(chat_id,t,parse_mode='Markdown',reply_markup=m)
+    else:
+        if message_id:
+            try: bot.edit_message_text(t,chat_id,message_id,parse_mode='Markdown')
+            except: bot.send_message(chat_id,t,parse_mode='Markdown')
+        else: bot.send_message(chat_id,t,parse_mode='Markdown')
+
+@bot.message_handler(commands=['quests'])
+@bot.message_handler(func=lambda m:m.text=="📋 Задания")
+def menu_quests(message):
+    uid=message.from_user.id
+    show_quests(uid,message.chat.id)
 
 @bot.callback_query_handler(func=lambda c:c.data.startswith("qclaim_"))
 def quest_claim(call):
@@ -1634,7 +2018,7 @@ def quest_claim(call):
     if qprog<qtgt: bot.answer_callback_query(call.id,"Не выполнено!");conn.close();return
     c.execute("UPDATE daily_quests SET claimed=1 WHERE quest_id=?",(qid,));conn.commit();conn.close()
     add_fishnets(uid,qrew);bot.answer_callback_query(call.id,f"Получено 🐟{qrew}!")
-    menu_quests(call.message)
+    show_quests(uid,call.message.chat.id,call.message.message_id)
 
 # ==================== ФОНОВЫЕ ПОТОКИ ====================
 def stats_decay():
@@ -1675,7 +2059,7 @@ bot.set_my_commands([
     types.BotCommand("inventory","Инвентарь"),types.BotCommand("setphoto","Фото тюленя"),
     types.BotCommand("shop","Магазин"),types.BotCommand("craft","Крафт"),
     types.BotCommand("trade","Биржа"),types.BotCommand("battle","Бой с боссом"),
-    types.BotCommand("dungeon","Подземелье"),types.BotCommand("work","Работа"),
+    types.BotCommand("dungeon","Подземолье"),types.BotCommand("work","Работа"),
     types.BotCommand("duel","PvP-дуэль"),types.BotCommand("fish","Рыбалка"),
     types.BotCommand("vote","Голосование"),types.BotCommand("faction","Фракции"),
     types.BotCommand("questchain","Квестовые цепочки"),types.BotCommand("clan","Клан"),
