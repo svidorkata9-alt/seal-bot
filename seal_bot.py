@@ -1684,5 +1684,6 @@ bot.set_my_commands([
 ])
 
 if __name__=="__main__":
+    run_migrations()
     print("Бот запущен! 🦭")
     bot.polling(none_stop=True)
