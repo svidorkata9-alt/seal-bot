@@ -1099,12 +1099,13 @@ def chest_menu(call):
 @bot.callback_query_handler(func=lambda c: c.data.startswith("openchest_"))
 def open_chest_do(call):
     uid = call.from_user.id
-    chest_name = call.data[10:]
-    m = re.search(r'$$([A-Z])$$', chest_name)
-    if not m:
-        bot.answer_callback_query(call.id, "Ошибка: неизвестный сундук!")
+    chest_name = call.data[len("openchest_"):]
+    start = chest_name.find('[')
+    end = chest_name.find(']')
+    if start == -1 or end == -1 or end <= start:
+        bot.answer_callback_query(call.id, f"Не удалось определить редкость: {chest_name}")
         return
-    rarity = m.group(1)
+    rarity = chest_name[start+1:end]
     try:
         result = open_chest(uid, rarity)
     except Exception as e:
@@ -1119,11 +1120,15 @@ def open_chest_do(call):
         for i in chests:
             mk.add(types.InlineKeyboardButton(f"Открыть {i[2]} (x{i[4]})", callback_data=f"openchest_{i[2]}"))
         mk.add(types.InlineKeyboardButton("◀️", callback_data="invback"))
-        bot.edit_message_text("📦 Какие сундуки открыть?", call.message.chat.id, call.message.message_id, reply_markup=mk)
+        try:
+            bot.edit_message_text("📦 Какие сундуки открыть?", call.message.chat.id, call.message.message_id, reply_markup=mk)
+        except:
+            pass
     else:
-        bot.edit_message_text("📦 Сундуков больше нет.", call.message.chat.id, call.message.message_id)
-
-
+        try:
+            bot.edit_message_text("📦 Сундуков больше нет.", call.message.chat.id, call.message.message_id)
+        except:
+            pass
 @bot.callback_query_handler(func=lambda c: c.data == "invback")
 def inv_back(call):
     uid = call.from_user.id; inv = get_inv(uid)
