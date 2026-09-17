@@ -695,7 +695,6 @@ def get_effective_stats(sid):
         if uid:
             es, ed = get_enchanted_stats(uid, item_name)
             bs += es; bd += ed
-    # Бонусы от зелий
     ps, pd, _, _, _, _ = get_active_potion_mods(sid)
     bs += ps; bd += pd
     return base_str + bs, base_def + bd, base_hp + bh
