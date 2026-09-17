@@ -528,7 +528,7 @@ def get_sell_price(item_name):
     if item_name in POTION_SELL_PRICES: return POTION_SELL_PRICES[item_name]
 m = re.search(r'^([a-z]+)_', item_name)
 if m and m.group(1) in RARITY_SELL_PRICES:
-    return RARITY_SELL_PRICES[m.group(1)]
+return RARITY_SELL_PRICES[m.group(1)]
     for recipe in CRAFT_RECIPES:
         if recipe["name"] == item_name:
             total = sum(RESOURCE_SELL_PRICES.get(r, 5) * a for r, a in recipe["resources"].items())
