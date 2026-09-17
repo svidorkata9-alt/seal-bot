@@ -102,7 +102,7 @@ def run_migrations():
     conn.commit()
     conn.close()
 
-# ==================== КОНСТАНТЫ ====================
+# ==================== МАГАЗИН ====================
 SHOP_ITEMS = {
     "Апельсин 🍊": {"price": 15, "type": "food", "satiety": 25, "mood": 10},
     "Рыба 🐟": {"price": 10, "type": "food", "satiety": 20, "mood": 5},
@@ -123,14 +123,42 @@ SHOP_ITEMS = {
     "Радужный пояс 🌈": {"price": 80, "type": "accessory"},
 }
 
+# ==================== БОНУСЫ ПРЕДМЕТОВ ====================
 ITEM_BONUSES = {
+    # Базовое оружие
     "Костяной меч 🗡️": {"str": 5}, "Акулий клык 🦷": {"str": 8}, "Трезубец 🔱": {"str": 12}, "Китовый клинок 🐋": {"str": 15},
     "Ядовитый клинок ☠️": {"str": 10}, "Ядовитый дротик 🎯": {"str": 7},
+    # Продвинутое оружие
+    "Костяной лук 🏹": {"str": 14}, "Кристальный меч 💎": {"str": 18}, "Ледяной клинок ❄️": {"str": 20},
+    "Коралловое копьё 🪸": {"str": 16}, "Светящийся меч ✨": {"str": 22}, "Тёмный клинок 🖤": {"str": 25},
+    "Янтарный молот 🟡": {"str": 28}, "Рог нарвала 🦏": {"str": 24}, "Призрачный клинок 👻": {"str": 21},
+    "Костяной гарпун 🦴": {"str": 13}, "Глубинный трезубец 🌑": {"str": 30}, "Кристальный лук 💎": {"str": 26},
+    "Коралловый меч 🪸": {"str": 19}, "Ядовитый гарпун ☠️": {"str": 17}, "Ледяной лук ❄️": {"str": 23},
+    # Базовая броня
     "Чешуйчатая броня 🐟": {"def": 5, "hp": 10}, "Панцирь краба 🦀": {"def": 8, "hp": 15},
     "Плетёная броня 🧵": {"def": 10, "hp": 25}, "Кракеновый панцирь 🐙": {"def": 15, "hp": 40},
+    # Продвинутая броня
+    "Костяная броня 🦴": {"def": 12, "hp": 30}, "Кристальная броня 💎": {"def": 18, "hp": 50},
+    "Ледяная броня ❄️": {"def": 20, "hp": 55}, "Коралловая броня 🪸": {"def": 16, "hp": 45},
+    "Светящаяся броня ✨": {"def": 22, "hp": 60}, "Тёмная броня 🖤": {"def": 25, "hp": 70},
+    "Янтарная броня 🟡": {"def": 28, "hp": 80}, "Призрачная броня 👻": {"def": 20, "hp": 50},
+    "Слизневый панцирь 🐌": {"def": 14, "hp": 35}, "Костяной доспех 🦴": {"def": 15, "hp": 40},
+    # Базовые шлемы
     "Шлем из ракушек 🐚": {"def": 3, "hp": 10}, "Костяной шлем 💀": {"def": 5, "hp": 15}, "Корона из зубов 👑": {"def": 8, "hp": 20},
     "Ядовитый шлем ☠️": {"def": 4, "hp": 12},
+    # Продвинутые шлемы
+    "Кристальный шлем 💎": {"def": 10, "hp": 25}, "Ледяной шлем ❄️": {"def": 12, "hp": 30},
+    "Коралловый шлем 🪸": {"def": 9, "hp": 22}, "Светящийся шлем ✨": {"def": 14, "hp": 35},
+    "Тёмный шлем 🖤": {"def": 16, "hp": 40}, "Янтарный шлем 🟡": {"def": 18, "hp": 45},
+    "Шлем из иголок 🦔": {"def": 8, "hp": 20}, "Призрачный шлем 👻": {"def": 13, "hp": 33},
+    "Костяная корона 🦴": {"def": 11, "hp": 28}, "Слизневый шлем 🐌": {"def": 7, "hp": 18},
+    # Базовые щиты
     "Щит из чешуи 🐠": {"def": 5}, "Панцирный щит 🛡️": {"def": 8}, "Щит кракена 🦑": {"def": 12}, "Ядовитый щит ☠️": {"def": 7},
+    # Продвинутые щиты
+    "Кристальный щит 💎": {"def": 15}, "Ледяной щит ❄️": {"def": 18}, "Коралловый щит 🪸": {"def": 14},
+    "Светящийся щит ✨": {"def": 20}, "Тёмный щит 🖤": {"def": 22}, "Янтарный щит 🟡": {"def": 25},
+    "Песчаный щит ⏳": {"def": 13}, "Призрачный щит 👻": {"def": 17}, "Слизневый щит 🐌": {"def": 11},
+    "Костяной щит 🦴": {"def": 10}, "Роговой щит 🦏": {"def": 19},
 }
 
 ACCESSORY_BONUSES = {
@@ -139,27 +167,122 @@ ACCESSORY_BONUSES = {
     "Морская звезда ⭐": 12, "Жемчужное ожерелье 🫧": 18, "Перо чайки 🪶": 6, "Радужный пояс 🌈": 14,
 }
 
+# ==================== РЕЦЕПТЫ КРАФТА ====================
 CRAFT_RECIPES = [
-    {"name": "Костяной меч 🗡️", "type": "weapon", "resources": {"Акулий зуб 🦈": 3}},
-    {"name": "Акулий клык 🦷", "type": "weapon", "resources": {"Акулий зуб 🦈": 5, "Чешуя 🐟": 2}},
-    {"name": "Трезубец 🔱", "type": "weapon", "resources": {"Щупальце 🐙": 4, "Акулий зуб 🦈": 3}},
-    {"name": "Китовый клинок 🐋", "type": "weapon", "resources": {"Китовый ус 🐋": 3, "Жемчуг 🫧": 1}},
-    {"name": "Ядовитый клинок ☠️", "type": "weapon", "resources": {"Жало 🐡": 3, "Акулий зуб 🦈": 2}},
-    {"name": "Ядовитый дротик 🎯", "type": "weapon", "resources": {"Жало 🐡": 2, "Чешуя 🐟": 3}},
-    {"name": "Чешуйчатая броня 🐟", "type": "armor", "resources": {"Чешуя 🐟": 4}},
-    {"name": "Панцирь краба 🦀", "type": "armor", "resources": {"Панцирь 🦀": 3}},
-    {"name": "Плетёная броня 🧵", "type": "armor", "resources": {"Щупальце 🐙": 3, "Чешуя 🐟": 2}},
-    {"name": "Кракеновый панцирь 🐙", "type": "armor", "resources": {"Щупальце 🐙": 5, "Жемчуг 🫧": 1}},
-    {"name": "Шлем из ракушек 🐚", "type": "helmet", "resources": {"Панцирь 🦀": 3, "Чешуя 🐟": 1}},
-    {"name": "Костяной шлем 💀", "type": "helmet", "resources": {"Акулий зуб 🦈": 3}},
-    {"name": "Корона из зубов 👑", "type": "helmet", "resources": {"Акулий зуб 🦈": 5, "Жемчуг 🫧": 1}},
-    {"name": "Ядовитый шлем ☠️", "type": "helmet", "resources": {"Жало 🐡": 3, "Чешуя 🐟": 2}},
-    {"name": "Щит из чешуи 🐠", "type": "shield", "resources": {"Чешуя 🐟": 4, "Панцирь 🦀": 1}},
-    {"name": "Панцирный щит 🛡️", "type": "shield", "resources": {"Панцирь 🦀": 4}},
-    {"name": "Щит кракена 🦑", "type": "shield", "resources": {"Щупальце 🐙": 3, "Панцирь 🦀": 2}},
-    {"name": "Ядовитый щит ☠️", "type": "shield", "resources": {"Жало 🐡": 4, "Панцирь 🦀": 2}},
+    # --- Базовое оружие (Тир 1) ---
+    {"name": "Костяной меч 🗡️", "type": "weapon", "resources": {"Акулий зуб 🦈": 3}, "tier": 1, "desc": "Надёжный меч из акульих зубов"},
+    {"name": "Акулий клык 🦷", "type": "weapon", "resources": {"Акулий зуб 🦈": 5, "Чешуя 🐟": 2}, "tier": 1, "desc": "Острый клык для режущих ударов"},
+    {"name": "Трезубец 🔱", "type": "weapon", "resources": {"Щупальце 🐙": 4, "Акулий зуб 🦈": 3}, "tier": 1, "desc": "Классическое оружие глубин"},
+    {"name": "Китовый клинок 🐋", "type": "weapon", "resources": {"Китовый ус 🐋": 3, "Жемчуг 🫧": 1}, "tier": 2, "desc": "Длинный клинок из китового уса"},
+    {"name": "Ядовитый клинок ☠️", "type": "weapon", "resources": {"Жало 🐡": 3, "Акулий зуб 🦈": 2}, "tier": 1, "desc": "Отравляет противника"},
+    {"name": "Ядовитый дротик 🎯", "type": "weapon", "resources": {"Жало 🐡": 2, "Чешуя 🐟": 3}, "tier": 1, "desc": "Метательный дротик с ядом"},
+    # --- Продвинутое оружие (Тир 2) ---
+    {"name": "Костяной лук 🏹", "type": "weapon", "resources": {"Кость 🦴": 5, "Чешуя 🐟": 2}, "tier": 2, "desc": "Дальний бой костяным луком"},
+    {"name": "Костяной гарпун 🦴", "type": "weapon", "resources": {"Кость 🦴": 4, "Акулий зуб 🦈": 2}, "tier": 2, "desc": "Тяжёлый гарпун для пробивания брони"},
+    {"name": "Кристальный меч 💎", "type": "weapon", "resources": {"Кристалл 💎": 3, "Кость 🦴": 2}, "tier": 2, "desc": "Меч из чистого кристалла"},
+    {"name": "Ледяной клинок ❄️", "type": "weapon", "resources": {"Лёд 🧊": 4, "Чешуя 🐟": 3}, "tier": 2, "desc": "Замораживает противника"},
+    {"name": "Коралловое копьё 🪸", "type": "weapon", "resources": {"Коралл 🪸": 5, "Панцирь 🦀": 2}, "tier": 2, "desc": "Копьё с коралловым наконечником"},
+    {"name": "Светящийся меч ✨", "type": "weapon", "resources": {"Светящаяся чешуя ✨": 4, "Кристалл 💎": 2}, "tier": 3, "desc": "Меч, светящийся в темноте"},
+    {"name": "Тёмный клинок 🖤", "type": "weapon", "resources": {"Чернила 🖤": 5, "Клык 🦷": 2}, "tier": 3, "desc": "Клинок тьмы"},
+    {"name": "Янтарный молот 🟡", "type": "weapon", "resources": {"Янтарь 🟡": 3, "Кость 🦴": 4}, "tier": 3, "desc": "Тяжёлый молот из янтаря"},
+    {"name": "Рог нарвала 🦏", "type": "weapon", "resources": {"Рог 🦏": 2, "Жемчуг 🫧": 1}, "tier": 3, "desc": "Острый рог нарвала"},
+    {"name": "Призрачный клинок 👻", "type": "weapon", "resources": {"Призрачная чешуя 👻": 4, "Чернила 🖤": 2}, "tier": 3, "desc": "Полупрозрачный клинок"},
+    {"name": "Ядовитый гарпун ☠️", "type": "weapon", "resources": {"Жало 🐡": 4, "Кость 🦴": 3, "Слизь 🐌": 2}, "tier": 2, "desc": "Гарпун, пропитанный ядом"},
+    {"name": "Коралловый меч 🪸", "type": "weapon", "resources": {"Коралл 🪸": 4, "Акулий зуб 🦈": 2}, "tier": 2, "desc": "Меч с коралловыми шипами"},
+    # --- Легендарное оружие (Тир 4) ---
+    {"name": "Глубинный трезубец 🌑", "type": "weapon", "resources": {"Клык 🦷": 3, "Янтарь 🟡": 2, "Кристалл 💎": 3}, "tier": 4, "desc": "Легендарный трезубец глубин"},
+    {"name": "Кристальный лук 💎", "type": "weapon", "resources": {"Кристалл 💎": 5, "Светящаяся чешуя ✨": 3}, "tier": 4, "desc": "Идеальный лук из кристалла"},
+    {"name": "Ледяной лук ❄️", "type": "weapon", "resources": {"Лёд 🧊": 5, "Кристалл 💎": 2}, "tier": 3, "desc": "Лук, замораживающий стрелы"},
+    # --- Базовая броня (Тир 1) ---
+    {"name": "Чешуйчатая броня 🐟", "type": "armor", "resources": {"Чешуя 🐟": 4}, "tier": 1, "desc": "Лёгкая чешуйчатая броня"},
+    {"name": "Панцирь краба 🦀", "type": "armor", "resources": {"Панцирь 🦀": 3}, "tier": 1, "desc": "Прочный панцирь"},
+    {"name": "Плетёная броня 🧵", "type": "armor", "resources": {"Щупальце 🐙": 3, "Чешуя 🐟": 2}, "tier": 1, "desc": "Плетёная из щупалец"},
+    {"name": "Кракеновый панцирь 🐙", "type": "armor", "resources": {"Щупальце 🐙": 5, "Жемчуг 🫧": 1}, "tier": 2, "desc": "Панцирь из частей кракена"},
+    # --- Продвинутая броня (Тир 2-3) ---
+    {"name": "Костяная броня 🦴", "type": "armor", "resources": {"Кость 🦴": 5}, "tier": 2, "desc": "Броня из костей"},
+    {"name": "Костяной доспех 🦴", "type": "armor", "resources": {"Кость 🦴": 7, "Панцирь 🦀": 2}, "tier": 2, "desc": "Полный доспех из костей"},
+    {"name": "Кристальная броня 💎", "type": "armor", "resources": {"Кристалл 💎": 4, "Чешуя 🐟": 2}, "tier": 3, "desc": "Броня из кристаллов"},
+    {"name": "Ледяная броня ❄️", "type": "armor", "resources": {"Лёд 🧊": 5}, "tier": 3, "desc": "Броня из вечного льда"},
+    {"name": "Коралловая броня 🪸", "type": "armor", "resources": {"Коралл 🪸": 4, "Панцирь 🦀": 2}, "tier": 2, "desc": "Броня с кораллами"},
+    {"name": "Светящаяся броня ✨", "type": "armor", "resources": {"Светящаяся чешуя ✨": 4}, "tier": 3, "desc": "Светится в темноте"},
+    {"name": "Тёмная броня 🖤", "type": "armor", "resources": {"Чернила 🖤": 4, "Клык 🦷": 2}, "tier": 3, "desc": "Броня тьмы"},
+    {"name": "Янтарная броня 🟡", "type": "armor", "resources": {"Янтарь 🟡": 3, "Кость 🦴": 3}, "tier": 4, "desc": "Древняя янтарная броня"},
+    {"name": "Призрачная броня 👻", "type": "armor", "resources": {"Призрачная чешуя 👻": 4}, "tier": 3, "desc": "Полупрозрачная броня"},
+    {"name": "Слизневый панцирь 🐌", "type": "armor", "resources": {"Слизь 🐌": 4, "Панцирь 🦀": 2}, "tier": 2, "desc": "Скользкий панцирь"},
+    # --- Шлемы (Тир 1-4) ---
+    {"name": "Шлем из ракушек 🐚", "type": "helmet", "resources": {"Панцирь 🦀": 3, "Чешуя 🐟": 1}, "tier": 1, "desc": "Простой шлем"},
+    {"name": "Костяной шлем 💀", "type": "helmet", "resources": {"Акулий зуб 🦈": 3}, "tier": 1, "desc": "Шлем из зубов"},
+    {"name": "Корона из зубов 👑", "type": "helmet", "resources": {"Акулий зуб 🦈": 5, "Жемчуг 🫧": 1}, "tier": 2, "desc": "Корона охотника"},
+    {"name": "Ядовитый шлем ☠️", "type": "helmet", "resources": {"Жало 🐡": 3, "Чешуя 🐟": 2}, "tier": 1, "desc": "Шлем с ядовитыми шипами"},
+    {"name": "Кристальный шлем 💎", "type": "helmet", "resources": {"Кристалл 💎": 3}, "tier": 3, "desc": "Шлем из кристалла"},
+    {"name": "Ледяной шлем ❄️", "type": "helmet", "resources": {"Лёд 🧊": 3}, "tier": 3, "desc": "Ледяной шлем"},
+    {"name": "Коралловый шлем 🪸", "type": "helmet", "resources": {"Коралл 🪸": 3}, "tier": 2, "desc": "Шлем из кораллов"},
+    {"name": "Светящийся шлем ✨", "type": "helmet", "resources": {"Светящаяся чешуя ✨": 3}, "tier": 3, "desc": "Светящийся шлем"},
+    {"name": "Тёмный шлем 🖤", "type": "helmet", "resources": {"Чернила 🖤": 3}, "tier": 3, "desc": "Шлем тьмы"},
+    {"name": "Янтарный шлем 🟡", "type": "helmet", "resources": {"Янтарь 🟡": 2, "Кость 🦴": 3}, "tier": 4, "desc": "Древний шлем"},
+    {"name": "Шлем из иголок 🦔", "type": "helmet", "resources": {"Иголка 🦔": 4, "Панцирь 🦀": 1}, "tier": 2, "desc": "Шлем с иглами"},
+    {"name": "Призрачный шлем 👻", "type": "helmet", "resources": {"Призрачная чешуя 👻": 3}, "tier": 3, "desc": "Призрачный шлем"},
+    {"name": "Костяная корона 🦴", "type": "helmet", "resources": {"Кость 🦴": 4, "Жемчуг 🫧": 1}, "tier": 2, "desc": "Корона из костей"},
+    {"name": "Слизневый шлем 🐌", "type": "helmet", "resources": {"Слизь 🐌": 3, "Панцирь 🦀": 1}, "tier": 2, "desc": "Скользкий шлем"},
+    # --- Щиты (Тир 1-4) ---
+    {"name": "Щит из чешуи 🐠", "type": "shield", "resources": {"Чешуя 🐟": 4, "Панцирь 🦀": 1}, "tier": 1, "desc": "Щит из чешуи"},
+    {"name": "Панцирный щит 🛡️", "type": "shield", "resources": {"Панцирь 🦀": 4}, "tier": 1, "desc": "Прочный щит"},
+    {"name": "Щит кракена 🦑", "type": "shield", "resources": {"Щупальце 🐙": 3, "Панцирь 🦀": 2}, "tier": 2, "desc": "Щит из частей кракена"},
+    {"name": "Ядовитый щит ☠️", "type": "shield", "resources": {"Жало 🐡": 4, "Панцирь 🦀": 2}, "tier": 2, "desc": "Ядовитый щит"},
+    {"name": "Кристальный щит 💎", "type": "shield", "resources": {"Кристалл 💎": 4}, "tier": 3, "desc": "Кристальный щит"},
+    {"name": "Ледяной щит ❄️", "type": "shield", "resources": {"Лёд 🧊": 4}, "tier": 3, "desc": "Ледяной щит"},
+    {"name": "Коралловый щит 🪸", "type": "shield", "resources": {"Коралл 🪸": 4}, "tier": 2, "desc": "Коралловый щит"},
+    {"name": "Светящийся щит ✨", "type": "shield", "resources": {"Светящаяся чешуя ✨": 4}, "tier": 3, "desc": "Светящийся щит"},
+    {"name": "Тёмный щит 🖤", "type": "shield", "resources": {"Чернила 🖤": 4}, "tier": 3, "desc": "Щит тьмы"},
+    {"name": "Янтарный щит 🟡", "type": "shield", "resources": {"Янтарь 🟡": 3}, "tier": 4, "desc": "Древний щит"},
+    {"name": "Песчаный щит ⏳", "type": "shield", "resources": {"Песок ⏳": 5, "Панцирь 🦀": 3}, "tier": 2, "desc": "Песчаный щит"},
+    {"name": "Призрачный щит 👻", "type": "shield", "resources": {"Призрачная чешуя 👻": 4}, "tier": 3, "desc": "Призрачный щит"},
+    {"name": "Слизневый щит 🐌", "type": "shield", "resources": {"Слизь 🐌": 4, "Панцирь 🦀": 2}, "tier": 2, "desc": "Скользкий щит"},
+    {"name": "Костяной щит 🦴", "type": "shield", "resources": {"Кость 🦴": 4}, "tier": 2, "desc": "Щит из костей"},
+    {"name": "Роговой щит 🦏", "type": "shield", "resources": {"Рог 🦏": 3, "Панцирь 🦀": 2}, "tier": 3, "desc": "Щит из рога нарвала"},
+    # --- Зелья и расходники ---
+    {"name": "Зелье силы 💪", "type": "potion", "resources": {"Слизь 🐌": 2, "Жало 🐡": 1}, "tier": 1, "desc": "+10 силы на 1 бой"},
+    {"name": "Зелье здоровья 💚", "type": "potion", "resources": {"Иголка 🦔": 3, "Жемчуг 🫧": 1}, "tier": 2, "desc": "Полное лечение"},
+    {"name": "Зелье ярости 😤", "type": "potion", "resources": {"Клык 🦷": 2, "Чернила 🖤": 1}, "tier": 3, "desc": "Режим берсерка"},
+    {"name": "Ледяное зелье 🧊", "type": "potion", "resources": {"Лёд 🧊": 3}, "tier": 2, "desc": "Замораживает врага"},
+    {"name": "Зелье невидимости 👻", "type": "potion", "resources": {"Призрачная чешуя 👻": 2, "Чернила 🖤": 2}, "tier": 3, "desc": "Бонус к уклонению"},
+    {"name": "Ядовитое зелье ☠️", "type": "potion", "resources": {"Жало 🐡": 3, "Слизь 🐌": 2}, "tier": 2, "desc": "Отравляет врага"},
+    {"name": "Зелье брони 🛡️", "type": "potion", "resources": {"Панцирь 🦀": 3, "Слизь 🐌": 1}, "tier": 2, "desc": "+10 защиты на 1 бой"},
+    {"name": "Светящееся зелье ✨", "type": "potion", "resources": {"Светящаяся чешуя ✨": 2, "Кристалл 💎": 1}, "tier": 3, "desc": "Освещает подземелье"},
+    {"name": "Янтарный эликсир 🟡", "type": "potion", "resources": {"Янтарь 🟡": 2, "Жемчуг 🫧": 1}, "tier": 4, "desc": "Восстанавливает 100 HP"},
 ]
 
+POTION_EFFECTS = {
+    "Зелье силы 💪": {"stat": "str", "amount": 10, "duration": 1},
+    "Зелье здоровья 💚": {"stat": "heal_full", "amount": 0, "duration": 0},
+    "Зелье ярости 😤": {"stat": "berserk", "amount": 0, "duration": 1},
+    "Ледяное зелье 🧊": {"stat": "freeze", "amount": 0, "duration": 1},
+    "Зелье невидимости 👻": {"stat": "dodge", "amount": 30, "duration": 1},
+    "Ядовитое зелье ☠️": {"stat": "poison", "amount": 15, "duration": 3},
+    "Зелье брони 🛡️": {"stat": "def", "amount": 10, "duration": 1},
+    "Светящееся зелье ✨": {"stat": "light", "amount": 0, "duration": 0},
+    "Янтарный эликсир 🟡": {"stat": "heal", "amount": 100, "duration": 0},
+}
+
+# ==================== ЦЕНЫ ПРОДАЖИ РЕСУРСОВ ====================
+RESOURCE_SELL_PRICES = {
+    "Чешуя 🐟": 5, "Панцирь 🦀": 7, "Акулий зуб 🦈": 10, "Щупальце 🐙": 12,
+    "Жемчуг 🫧": 25, "Китовый ус 🐋": 15, "Жало 🐡": 8,
+    "Кость 🦴": 9, "Кристалл 💎": 20, "Лёд 🧊": 14, "Коралл 🪸": 11,
+    "Светящаяся чешуя ✨": 22, "Тёмные чернила 🖤": 18, "Янтарь 🟡": 30,
+    "Рог 🦏": 28, "Призрачная чешуя 👻": 24, "Слизь 🐌": 6, "Иголка 🦔": 7,
+    "Песок ⏳": 4, "Клык 🦷": 16,
+}
+
+RARITY_SELL_PRICES = {"F": 15, "E": 35, "D": 75, "C": 150, "B": 350, "A": 700, "S": 1500}
+
+POTION_SELL_PRICES = {
+    "Зелье силы 💪": 25, "Зелье здоровья 💚": 50, "Зелье ярости 😤": 70,
+    "Ледяное зелье 🧊": 40, "Зелье невидимости 👻": 60, "Ядовитое зелье ☠️": 35,
+    "Зелье брони 🛡️": 30, "Светящееся зелье ✨": 55, "Янтарный эликсир 🟡": 120,
+}
+
+# ==================== СУНДУКИ И АРТЕФАКТЫ ====================
 ARTIFACTS = {
     "F": [{"name":"Ржавый ключ 🗝️","str":2,"def":1,"hp":5},{"name":"Старый компас 🧭","str":1,"def":2,"hp":5},{"name":"Обломок ракушки 🐚","str":2,"def":2,"hp":3}],
     "E": [{"name":"Медный амулет 🟤","str":4,"def":3,"hp":10},{"name":"Рыбацкий талисман 🎣","str":3,"def":4,"hp":12}],
@@ -195,13 +318,7 @@ CHEST_CONTENTS = {
     "C": {"fishnets": (120, 250)}, "B": {"fishnets": (250, 500)}, "A": {"fishnets": (500, 1000)}, "S": {"fishnets": (1000, 2000)},
 }
 
-RESOURCE_SELL_PRICES = {
-    "Чешуя 🐟": 5, "Панцирь 🦀": 7, "Акулий зуб 🦈": 10, "Щупальце 🐙": 12,
-    "Жемчуг 🫧": 25, "Китовый ус 🐋": 15, "Жало 🐡": 8,
-}
-
-RARITY_SELL_PRICES = {"F": 15, "E": 35, "D": 75, "C": 150, "B": 350, "A": 700, "S": 1500}
-
+# ==================== КОНФИГ ПОДЗЕМЕЛЬЯ ====================
 DUNGEON_FLOORS_CONFIG = [
     {"monsters": 2, "chest_rarity": "F", "hp_mult": 1.0, "str_mult": 1.0},
     {"monsters": 2, "chest_rarity": "F", "hp_mult": 1.3, "str_mult": 1.2},
@@ -216,6 +333,70 @@ DUNGEON_FLOORS_CONFIG = [
 ]
 DUNGEON_TOTAL_FLOORS = 10
 
+# ==================== МОНСТРЫ ПОДЗЕМЕЛЬЯ (расширенные) ====================
+DUNGEON_MONSTERS = [
+    {"name": "Фугу 🐡", "hp": 30, "str": 8, "def": 3, "drops": {"Жало 🐡": 0.7}},
+    {"name": "Креветка-ниндзя 🦐", "hp": 35, "str": 9, "def": 8, "drops": {"Панцирь 🦀": 0.5, "Чешуя 🐟": 0.3}},
+    {"name": "Акула 🦈", "hp": 50, "str": 12, "def": 5, "drops": {"Акулий зуб 🦈": 0.7}},
+    {"name": "Морской змей 🐍", "hp": 60, "str": 15, "def": 6, "drops": {"Чешуя 🐟": 0.7}},
+    {"name": "Кракен 🐙", "hp": 80, "str": 18, "def": 8, "drops": {"Щупальце 🐙": 0.7, "Жемчуг 🫧": 0.1}},
+    {"name": "Лобстер 🦞", "hp": 40, "str": 10, "def": 10, "drops": {"Панцирь 🦀": 0.7}},
+    {"name": "Кашалот 🐋", "hp": 120, "str": 20, "def": 12, "drops": {"Китовый ус 🐋": 0.6}},
+    {"name": "Электрический скат ⚡", "hp": 55, "str": 14, "def": 4, "drops": {"Чешуя 🐟": 0.5, "Жало 🐡": 0.3}},
+    {"name": "Гигантская медуза 🪼", "hp": 45, "str": 11, "def": 3, "drops": {"Жало 🐡": 0.6}},
+    {"name": "Морской дьявол 😈", "hp": 90, "str": 16, "def": 9, "drops": {"Жемчуг 🫧": 0.3, "Чешуя 🐟": 0.4}},
+    # --- НОВЫЕ МОНСТРЫ ---
+    {"name": "Морской ёж 🦔", "hp": 35, "str": 7, "def": 12, "drops": {"Иголка 🦔": 0.7, "Жало 🐡": 0.2}},
+    {"name": "Нарвал 🦏", "hp": 70, "str": 14, "def": 7, "drops": {"Рог 🦏": 0.5, "Чешуя 🐟": 0.3}},
+    {"name": "Гигантская улитка 🐌", "hp": 50, "str": 6, "def": 14, "drops": {"Слизь 🐌": 0.7, "Панцирь 🦀": 0.2}},
+    {"name": "Призрачная рыба 👻", "hp": 65, "str": 13, "def": 5, "drops": {"Призрачная чешуя 👻": 0.6}},
+    {"name": "Ледяная рыба 🧊", "hp": 75, "str": 15, "def": 8, "drops": {"Лёд 🧊": 0.7, "Чешуя 🐟": 0.2}},
+    {"name": "Коралловый страж 🪸", "hp": 85, "str": 12, "def": 14, "drops": {"Коралл 🪸": 0.7, "Панцирь 🦀": 0.2}},
+    {"name": "Светящийся угрь ⚡", "hp": 60, "str": 17, "def": 4, "drops": {"Светящаяся чешуя ✨": 0.6, "Чешуя 🐟": 0.2}},
+    {"name": "Древний скелет 💀", "hp": 100, "str": 16, "def": 10, "drops": {"Кость 🦴": 0.7, "Жемчуг 🫧": 0.1}},
+    {"name": "Тёмный кальмар 🖤", "hp": 90, "str": 18, "def": 6, "drops": {"Тёмные чернила 🖤": 0.7, "Щупальце 🐙": 0.3}},
+    {"name": "Песчаный скат ⏳", "hp": 55, "str": 11, "def": 9, "drops": {"Песок ⏳": 0.6, "Чешуя 🐟": 0.2}},
+    {"name": "Янтарная рыба 🟡", "hp": 110, "str": 19, "def": 11, "drops": {"Янтарь 🟡": 0.5, "Кость 🦴": 0.2}},
+    {"name": "Глубинный хищник 🦷", "hp": 130, "str": 22, "def": 12, "drops": {"Клык 🦷": 0.6, "Чешуя 🐟": 0.2}},
+    {"name": "Кристальный голем 💎", "hp": 150, "str": 20, "def": 18, "drops": {"Кристалл 💎": 0.5, "Кость 🦴": 0.2}},
+    {"name": "Морская оса 🐝", "hp": 40, "str": 18, "def": 2, "drops": {"Жало 🐡": 0.5, "Иголка 🦔": 0.3}},
+    {"name": "Коралловый краб 🪸🦀", "hp": 70, "str": 13, "def": 15, "drops": {"Коралл 🪸": 0.4, "Панцирь 🦀": 0.4}},
+    {"name": "Ледяной кракен 🧊🐙", "hp": 140, "str": 24, "def": 10, "drops": {"Лёд 🧊": 0.4, "Щупальце 🐙": 0.4}},
+]
+
+BOSSES = [
+    {"name": "Краб-босс 🦀", "drops": {"Панцирь 🦀": 0.8}}, {"name": "Акула 🦈", "drops": {"Акулий зуб 🦈": 0.8}},
+    {"name": "Осьминог 🐙", "drops": {"Щупальце 🐙": 0.8}}, {"name": "Морской ёжик 🦔", "drops": {"Жало 🐡": 0.8, "Иголка 🦔": 0.5}},
+    {"name": "Кашалот 🐋", "drops": {"Китовый ус 🐋": 0.7}}, {"name": "Морской змей 🐍", "drops": {"Чешуя 🐟": 0.8}},
+    {"name": "Гигантский краб 🦀", "drops": {"Панцирь 🦀": 0.8, "Жемчуг 🫧": 0.15}},
+    {"name": "Электрический скат ⚡", "drops": {"Чешуя 🐟": 0.7, "Жало 🐡": 0.3}},
+    {"name": "Глубинный монстр 🌑", "drops": {"Жемчуг 🫧": 0.4, "Щупальце 🐙": 0.5}},
+    {"name": "Король креветок 🦐", "drops": {"Панцирь 🦀": 0.7, "Чешуя 🐟": 0.3}},
+    {"name": "Кристальный титан 💎", "drops": {"Кристалл 💎": 0.7, "Кость 🦴": 0.3}},
+    {"name": "Ледяной левиафан 🧊", "drops": {"Лёд 🧊": 0.7, "Чешуя 🐟": 0.2}},
+    {"name": "Тёмный властелин 🖤", "drops": {"Тёмные чернила 🖤": 0.7, "Клык 🦷": 0.3}},
+    {"name": "Янтарный дракон 🟡", "drops": {"Янтарь 🟡": 0.6, "Кость 🦴": 0.3}},
+    {"name": "Призрачный король 👻", "drops": {"Призрачная чешуя 👻": 0.7, "Жемчуг 🫧": 0.2}},
+    {"name": "Нарвал-вождь 🦏", "drops": {"Рог 🦏": 0.7, "Жемчуг 🫧": 0.2}},
+]
+
+CLAN_DUNGEON_MONSTERS = [
+    {"name": "Страж глубин 🌊", "hp": 200, "str": 25, "def": 15}, {"name": "Древний краб 🦀", "hp": 250, "str": 30, "def": 20},
+    {"name": "Призрачная акула 👻", "hp": 300, "str": 35, "def": 18}, {"name": "Ледяной кальмар 🧊", "hp": 350, "str": 40, "def": 25},
+    {"name": "Гигантский спрут 🐙", "hp": 400, "str": 45, "def": 22}, {"name": "Морской дракон 🐉", "hp": 500, "str": 55, "def": 30},
+    {"name": "Бездонный левиафан 🐋", "hp": 600, "str": 60, "def": 35}, {"name": "Крашеный кракен 🦑", "hp": 700, "str": 70, "def": 40},
+    {"name": "Древний бог морей 🔱", "hp": 800, "str": 80, "def": 45}, {"name": "Повелитель бездны 🌑", "hp": 1000, "str": 100, "def": 60},
+]
+
+# ==================== ТИРЫ КРАФТА ====================
+CRAFT_TIERS = {
+    1: {"name": "🔹 Базовый", "color": "🔹"},
+    2: {"name": "🔸 Продвинутый", "color": "🔸"},
+    3: {"name": "🔴 Элитный", "color": "🔴"},
+    4: {"name": "👑 Легендарный", "color": "👑"},
+}
+
+# ==================== СЛОВАРЬ ТИПОВ ====================
 ITEM_TYPES = {}
 for _n, _i in SHOP_ITEMS.items(): ITEM_TYPES[_n] = _i["type"]
 for _r in CRAFT_RECIPES: ITEM_TYPES[_r["name"]] = _r["type"]
@@ -234,7 +415,6 @@ for _r in "FEDCBAS":
         ITEM_BONUSES[_fn] = {"def": _a.get("def",0), "hp": _a.get("hp",0)}
         ITEM_TYPES[_fn] = "armor"
 ITEM_TYPES.update({"Компас мудреца 🧭": "accessory", "Амулет глубин 🌊": "accessory", "Корона чемпиона 👑": "accessory"})
-
 SEAL_SKILLS_POOL = [
     {"name": "Критический удар ⚡", "effect": "crit_15", "desc": "15% шанс двойного урона"},
     {"name": "Толстая кожа 🛡️", "effect": "dmg_reduce_10", "desc": "-10% получаемого урона"},
@@ -244,37 +424,6 @@ SEAL_SKILLS_POOL = [
     {"name": "Регенерация 💚", "effect": "regen", "desc": "+5 HP/час"},
     {"name": "Шипы 🌵", "effect": "thorns", "desc": "Отражает 20% урона"},
     {"name": "Двойной удар ⚔️", "effect": "double_strike", "desc": "10% шанс 2 атаки"},
-]
-
-DUNGEON_MONSTERS = [
-    {"name": "Фугу 🐡", "hp": 30, "str": 8, "def": 3, "drops": {"Жало 🐡": 0.7}},
-    {"name": "Креветка-ниндзя 🦐", "hp": 35, "str": 9, "def": 8, "drops": {"Панцирь 🦀": 0.5, "Чешуя 🐟": 0.3}},
-    {"name": "Акула 🦈", "hp": 50, "str": 12, "def": 5, "drops": {"Акулий зуб 🦈": 0.7}},
-    {"name": "Морской змей 🐍", "hp": 60, "str": 15, "def": 6, "drops": {"Чешуя 🐟": 0.7}},
-    {"name": "Кракен 🐙", "hp": 80, "str": 18, "def": 8, "drops": {"Щупальце 🐙": 0.7, "Жемчуг 🫧": 0.1}},
-    {"name": "Лобстер 🦞", "hp": 40, "str": 10, "def": 10, "drops": {"Панцирь 🦀": 0.7}},
-    {"name": "Кашалот 🐋", "hp": 120, "str": 20, "def": 12, "drops": {"Китовый ус 🐋": 0.6}},
-    {"name": "Электрический скат ⚡", "hp": 55, "str": 14, "def": 4, "drops": {"Чешуя 🐟": 0.5, "Жало 🐡": 0.3}},
-    {"name": "Гигантская медуза 🪼", "hp": 45, "str": 11, "def": 3, "drops": {"Жало 🐡": 0.6}},
-    {"name": "Морской дьявол 😈", "hp": 90, "str": 16, "def": 9, "drops": {"Жемчуг 🫧": 0.3, "Чешуя 🐟": 0.4}},
-]
-
-BOSSES = [
-    {"name": "Краб-босс 🦀", "drops": {"Панцирь 🦀": 0.8}}, {"name": "Акула 🦈", "drops": {"Акулий зуб 🦈": 0.8}},
-    {"name": "Осьминог 🐙", "drops": {"Щупальце 🐙": 0.8}}, {"name": "Морской ёжик 🦔", "drops": {"Жало 🐡": 0.8}},
-    {"name": "Кашалот 🐋", "drops": {"Китовый ус 🐋": 0.7}}, {"name": "Морской змей 🐍", "drops": {"Чешуя 🐟": 0.8}},
-    {"name": "Гигантский краб 🦀", "drops": {"Панцирь 🦀": 0.8, "Жемчуг 🫧": 0.15}},
-    {"name": "Электрический скат ⚡", "drops": {"Чешуя 🐟": 0.7, "Жало 🐡": 0.3}},
-    {"name": "Глубинный монстр 🌑", "drops": {"Жемчуг 🫧": 0.4, "Щупальце 🐙": 0.5}},
-    {"name": "Король креветок 🦐", "drops": {"Панцирь 🦀": 0.7, "Чешуя 🐟": 0.3}},
-]
-
-CLAN_DUNGEON_MONSTERS = [
-    {"name": "Страж глубин 🌊", "hp": 200, "str": 25, "def": 15}, {"name": "Древний краб 🦀", "hp": 250, "str": 30, "def": 20},
-    {"name": "Призрачная акула 👻", "hp": 300, "str": 35, "def": 18}, {"name": "Ледяной кальмар 🧊", "hp": 350, "str": 40, "def": 25},
-    {"name": "Гигантский спрут 🐙", "hp": 400, "str": 45, "def": 22}, {"name": "Морской дракон 🐉", "hp": 500, "str": 55, "def": 30},
-    {"name": "Бездонный левиафан 🐋", "hp": 600, "str": 60, "def": 35}, {"name": "Крашеный кракен 🦑", "hp": 700, "str": 70, "def": 40},
-    {"name": "Древний бог морей 🔱", "hp": 800, "str": 80, "def": 45}, {"name": "Повелитель бездны 🌑", "hp": 1000, "str": 100, "def": 60},
 ]
 
 JOBS = [
@@ -304,10 +453,12 @@ FACTIONS = {
 }
 
 RANDOM_ENCOUNTERS = [
-    {"name": "Сундук на берегу! 📦", "type": "item", "chance": 0.12, "items": ["Чешуя 🐟", "Панцирь 🦀", "Акулий зуб 🦈", "Жемчуг 🫧"]},
+    {"name": "Сундук на берегу! 📦", "type": "item", "chance": 0.12, "items": ["Чешуя 🐟", "Панцирь 🦀", "Акулий зуб 🦈", "Жемчуг 🫧", "Кость 🦴", "Кристалл 💎"]},
     {"name": "Злой краб! 🦀", "type": "battle", "chance": 0.10, "mood_cost": 10, "satiety_cost": 10, "drop": {"Панцирь 🦀": 0.5}},
     {"name": "Дружелюбный дельфин 🐬", "type": "hint", "chance": 0.08, "fishnet_reward": (10, 30)},
     {"name": "Затонувший корабль 🚢", "type": "fishnets", "chance": 0.06, "fishnet_reward": (30, 80)},
+    {"name": "Кристальная пещера 💎", "type": "item", "chance": 0.05, "items": ["Кристалл 💎", "Лёд 🧊", "Светящаяся чешуя ✨"]},
+    {"name": "Янтарный берег 🟡", "type": "item", "chance": 0.04, "items": ["Янтарь 🟡", "Кость 🦴", "Рог 🦏"]},
 ]
 
 QUEST_TEMPLATES = [
@@ -393,6 +544,7 @@ def remove_from_inv(uid, name, q=1):
 def get_sell_price(item_name):
     if item_name in SHOP_ITEMS: return int(SHOP_ITEMS[item_name]["price"] * 0.5)
     if item_name in RESOURCE_SELL_PRICES: return RESOURCE_SELL_PRICES[item_name]
+    if item_name in POTION_SELL_PRICES: return POTION_SELL_PRICES[item_name]
     m = re.search(r'
 $$
 ([A-Z])
@@ -411,28 +563,22 @@ def get_exp_mult():
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     now = datetime.now().isoformat()
     c.execute("SELECT effect FROM active_events WHERE active=1 AND event_type='exp_boost' AND expires_at > ?", (now,)); r = c.fetchone(); conn.close()
-    if r:
-        try: return float(r[0])
-        except ValueError: return 1.0
-    return 1.0
+    try: return float(r[0]) if r else 1.0
+    except: return 1.0
 
 def get_shop_disc():
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     now = datetime.now().isoformat()
     c.execute("SELECT effect FROM active_events WHERE active=1 AND event_type='shop_discount' AND expires_at > ?", (now,)); r = c.fetchone(); conn.close()
-    if r:
-        try: return float(r[0])
-        except ValueError: return 0.0
-    return 0.0
+    try: return float(r[0]) if r else 0.0
+    except: return 0.0
 
 def get_fish_bonus():
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     now = datetime.now().isoformat()
     c.execute("SELECT effect FROM active_events WHERE active=1 AND event_type='fishing_bonus' AND expires_at > ?", (now,)); r = c.fetchone(); conn.close()
-    if r:
-        try: return float(r[0])
-        except ValueError: return 1.0
-    return 1.0
+    try: return float(r[0]) if r else 1.0
+    except: return 1.0
 
 def get_seal_skills(sid):
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
@@ -515,240 +661,19 @@ def process_drops(uid, drops):
             q = random.randint(1, 2); add_to_inv(uid, res, "resource", q); d.append(f"{res} x{q}")
     return d
 
-def get_married_ids():
+def check_baby_growth(sid):
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT seal1_id
-# Система сундуков и артефактов
-def get_chest_contents(rarity):
-    if rarity in CHEST_CONTENTS:
-        min_fishnets, max_fishnets = CHEST_CONTENTS[rarity]
-        return random.randint(min_fishnets, max_fishnets)
-    return 0
-
-def get_artifact(rarity):
-    if rarity in ARTIFACTS:
-        return random.choice(ARTIFACTS[rarity])
-    return None
-
-def open_chest(user_id, chest_rarity):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    
-    # Проверка на наличие сундука
-    c.execute("SELECT * FROM inventory WHERE user_id=? AND item_type='chest'", (user_id,))
-    if not c.fetchone():
-        return "Сундук уже использован!"
-    
-    # Получение содержимого сундука
-    contents = get_chest_contents(chest_rarity)
-    fishnets = random.randint(contents, contents + 100)  # Добавляем случайное количество сетей
-    
-    # Добавление новых предметов в инвентарь
-    c.execute("INSERT INTO inventory (user_id, item_name, item_type, quantity) VALUES (?, ?, ?, ?)",
-             (user_id, "Сундук [" + chest_rarity + "] 📦", "chest", 1))
-    c.execute("INSERT INTO inventory (user_id, item_name, item_type, quantity) VALUES (?, ?, ?, ?)",
-             (user_id, "Сетей: " + str(fishnets), "fishnets", 1))
-    
-    # Получение артефакта
-    artifact = get_artifact(chest_rarity)
-    if artifact:
-        c.execute("INSERT INTO inventory (user_id, item_name, item_type, quantity) VALUES (?, ?, ?, ?)",
-                 (user_id, artifact["name"], "artifact", 1))
-    
-    conn.commit()
+    c.execute("SELECT is_baby, born_at FROM seals WHERE seal_id=?", (sid,))
+    r = c.fetchone()
+    if r and r[0] == 1 and r[1]:
+        try:
+            born = datetime.fromisoformat(r[1])
+            if (datetime.now() - born).days >= BABY_GROW_DAYS:
+                c.execute("UPDATE seals SET is_baby=0, strength=strength+5, defense=defense+3, max_health=max_health+20, health=max_health+20 WHERE seal_id=?", (sid,))
+                conn.commit()
+        except: pass
     conn.close()
-    
-    return f"Сундук открыт! Получено сетей: {fishnets}. Артефакт: {artifact['name'] if artifact else 'нет'}"
-def sell_item(user_id, item_name):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    
-    # Проверка наличия предмета
-    c.execute("SELECT * FROM inventory WHERE user_id=? AND item_name=?", (user_id, item_name))
-    item = c.fetchone()
-    if not item:
-        return "Предмет не найден!"
-    
-    # Получение цены продажи
-    item_type = ITEM_TYPES[item_name]
-    if item_type in RESOURCE_SELL_PRICES:
-        price = RESOURCE_SELL_PRICES[item_type]
-    elif item_name in RARITY_SELL_PRICES:
-        price = RARITY_SELL_PRICES[item["item_type"]]
-    else:
-        price = 0
-        
-    # Обновление баланса пользователя
-    user_balance = get_user_balance(user_id)
-    new_balance = user_balance + price
-    c.execute("UPDATE players SET fishnets=? WHERE user_id=?", (new_balance, user_id))
-    
-    # Удаление предмета из инвентаря
-    c.execute("DELETE FROM inventory WHERE user_id=? AND item_name=?", (user_id, item_name))
-    
-    conn.commit()
-    conn.close()
-    
-    return f"Продано! Получено сетей: {price}"
 
-def get_user_balance(user_id):
-    c = sqlite3.connect(DB_PATH).cursor()
-    c.execute("SELECT fishnets FROM players WHERE user_id=?", (user_id,))
-    return c.fetchone()[0]
-def start_dungeon_run(user_id, seal_id):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    
-    # Проверка на активное подземелье
-    c.execute("SELECT * FROM dungeon_runs WHERE user_id=? AND active=1", (user_id,))
-def grow_seal(seal_id):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    
-    # Проверка на возраст тюленя
-    c.execute("SELECT born_at FROM seals WHERE seal_id=?", (seal_id,))
-    born_at = c.fetchone()[0]
-    current_date = datetime.now()
-    
-    # Проверка, что тюленю пора расти
-    if (current_date - datetime.strptime(born_at, "%Y-%m-%d %H:%M:%S")).days >= BABY_GROW_DAYS:
-        c.execute("UPDATE seals SET is_baby=0, level=1, exp=0 WHERE seal_id=?", (seal_id,))
-        conn.commit()
-        return "Тюлень вырос и стал взрослым!"
-    
-    return "Тюлень ещё слишком мал для роста."
-
-def check_seal_status(seal_id):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    
-    c.execute("SELECT is_baby, level, exp FROM seals WHERE seal_id=?", (seal_id,))
-    seal_info = c.fetchone()
-    
-    if not seal_info:
-        return "Тюлень не найден!"
-    
-    status = f"Тюлень {seal_info[0] if seal_info[0] else 'взрослый'}\n"
-    status += f"Уровень: {seal_info[1]}\n"
-    status += f"Опыт: {seal_info[2]}"
-    
-    return status
-
-# Пример использования
-@bot.message_handler(commands=['grow'])
-def grow_command(message):
-    user_id = message.from_user.id
-    seal_id = message.text.strip()
-    
-    if not seal_id:
-        return "Укажите ID тюленя!"
-    
-    try:
-        result = grow_seal(seal_id)
-        bot.send_message(user_id, result)
-    except Exception as e:
-        bot.send_message(user_id, f"Произошла ошибка: {str(e)}")
-def get_dungeon_floor_config(current_floor):
-    return DUNGEON_FLOORS_CONFIG[current_floor - 1]
-
-def get_dungeon_monster_config(user_id, seal_id, current_floor):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    
-    c.execute("SELECT current_floor, active FROM dungeon_runs WHERE user_id=? AND active=1", (user_id,))
-    run_info = c.fetchone()
-    
-    if not run_info:
-        return None
-    
-    if run_info[0] < current_floor:
-        return None
-    
-    config = get_dungeon_floor_config(current_floor)
-    return config
-
-def update_dungeon_run(user_id, seal_id, current_floor):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    
-    c.execute("REPLACE INTO dungeon_runs (user_id, seal_id, current_floor, active) VALUES (?, ?, ?, 1)",
-             (user_id, seal_id, current_floor))
-    conn.commit()
-    conn.close()
-DUNGEON_MONSTERS = {
-    "F": {"name": "Краб-отшельник 🦀", "hp": 20, "str": 5, "def": 3},
-    "E": {"name": "Морской змей 🐍", "hp": 40, "str": 7, "def": 5},
-    "D": {"name": "Кальмар-призрак 👻", "hp": 60, "str": 10, "def": 7},
-    "C": {"name": "Левиафан 🐡", "hp": 80, "str": 15, "def": 10},
-    "B": {"name": "Морской дракон 🐉", "hp": 120, "str": 20, "def": 15},
-    "A": {"name": "Посейдон 🛡️", "hp": 200, "str": 30, "def": 25},
-    "S": {"name": "Босс Бездны 🌑", "hp": 300, "str": 50, "def": 30},
-}
-
-def get_dungeon_monster(user_id, seal_id, current_floor):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    
-    c.execute("SELECT current_monster FROM dungeon_runs WHERE user_id=? AND active=1", (user_id,))
-    current_monster = c.fetchone()[0]
-    
-    if not current_monster:
-        update_dungeon_run(user_id, seal_id, current_floor)
-        current_monster = 1
-    
-    monster_config = DUNGEON_MONSTERS.get(str(current_monster))
-    if monster_config:
-        c.execute("UPDATE dungeon_runs SET current_monster=? WHERE user_id=? AND active=1", (current_monster + 1, user_id))
-        conn.commit()
-        return monster_config
-    
-    return None
-
-def fight_monster(user_id, seal_id, monster_config):
-    seal = get_seal_info(seal_id)
-    health = seal["health"]
-    
-    while health > 0 and monster_config["hp"] > 0:
-        # Атака тюленя
-        damage = seal["strength"] - monster_config["def"]
-        if damage > 0:
-            monster_config["hp"] -= damage
-            bot.send_message(user_id, f"Тюлень атакует! Нанесено {damage} урона.")
-        
-        # Атака монстра
-        monster_damage = monster_config["str"] - seal["defense"]
-        if monster_damage > 0:
-            health -= monster_damage
-            bot.send_message(user_id, f"Монстр атакует! Получено {monster_damage} урона.")
-        
-        time.sleep(2)
-    
-    if monster_config["hp"] <= 0:
-        update_dungeon_run(user_id, seal_id, current_floor + 1)
-        return f"Монстр побежден! Переходим на этаж {current_floor + 1}."
-    
-    return f"Тюлень пал в бою! Осталось здоровья: {health}"
-def get_seal_info(seal_id):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    
-    c.execute("SELECT * FROM seals WHERE seal_id=?", (seal_id,))
-    seal = c.fetchone()
-    
-    if seal:
-        return seal
-    return None
-
-def check_dungeon_status(user_id):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    
-    c.execute("SELECT current_floor, active FROM dungeon_runs WHERE user_id=? AND active=1", (user_id,))
-    info = c.fetchone()
-    
-    if info:
-        return f"Текущий этаж: {info[0]}. Активно: {info[1]}"
-    return "Подземелье не активно!"
 def get_married_ids():
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("SELECT seal1_id FROM marriages UNION SELECT seal2_id FROM marriages")
@@ -769,19 +694,6 @@ def get_seal_status(seal, married):
         except: pass
     if mood >= 50 and satiety >= 50: return "🎮"
     return "🦭"
-
-def check_baby_growth(sid):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT is_baby, born_at FROM seals WHERE seal_id=?", (sid,))
-    r = c.fetchone()
-    if r and r[0] == 1 and r[1]:
-        try:
-            born = datetime.fromisoformat(r[1])
-            if (datetime.now() - born).days >= BABY_GROW_DAYS:
-                c.execute("UPDATE seals SET is_baby=0, strength=strength+5, defense=defense+3, max_health=max_health+20, health=max_health+20 WHERE seal_id=?", (sid,))
-                conn.commit()
-        except: pass
-    conn.close()
 
 def get_active_event_text():
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
@@ -913,21 +825,14 @@ def open_chest(uid, rarity):
     roll = random.random()
     if roll < 0.25:
         art = random.choice(ARTIFACTS.get(rarity, []))
-        fn = f"{art['name']} [{rarity}]"
-        add_to_inv(uid, fn, "artifact", 1)
-        msg += f"✨ Артефакт: {fn}\n"
+        fn = f"{art['name']} [{rarity}]"; add_to_inv(uid, fn, "artifact", 1); msg += f"✨ Артефакт: {fn}\n"
     elif roll < 0.55:
         w = random.choice(CHEST_WEAPONS.get(rarity, []))
-        fn = f"{w['name']} [{rarity}]"
-        add_to_inv(uid, fn, "weapon", 1)
-        msg += f"⚔️ Оружие: {fn}\n"
+        fn = f"{w['name']} [{rarity}]"; add_to_inv(uid, fn, "weapon", 1); msg += f"⚔️ Оружие: {fn}\n"
     elif roll < 0.80:
         a = random.choice(CHEST_ARMOR.get(rarity, []))
-        fn = f"{a['name']} [{rarity}]"
-        add_to_inv(uid, fn, "armor", 1)
-        msg += f"🛡️ Броня: {fn}\n"
+        fn = f"{a['name']} [{rarity}]"; add_to_inv(uid, fn, "armor", 1); msg += f"🛡️ Броня: {fn}\n"
     return msg
-
 # ==================== ОБРАБОТЧИКИ ====================
 @bot.message_handler(commands=['start'])
 def cmd_start(message):
@@ -956,7 +861,8 @@ def cmd_help(message):
          "*Сражения:*\n/battle /dungeon /work /duel\n\n"
          "*Активности:*\n/fish /vote /faction /marry /quests\n"
          "/questchain /clan\n\n"
-         "*Подземелье:* 10 этажей, сундуки и артефакты!\n"
+         "*Крафт:* 4 тира, 50+ рецептов, зелья!\n"
+         "*Подземелье:* 10 этажей, 25+ монстров, сундуки и артефакты!\n"
          "*Регенерация:* +25 HP/час | Навык каждые 5 уровней\n"
          "*Тюленята:* растут через 3 дня")
     bot.send_message(uid, t, parse_mode='Markdown'); show_main_menu(uid)
@@ -1009,8 +915,7 @@ def cmd_gallery(message):
     t = f"🖼 *Галерея*\n🐟 {fn}\n\n"
     for s in seals:
         check_baby_growth(s[0]); st = get_seal_status(s, married)
-        skills = get_seal_skills(s[0])
-        baby = " 🍼(растёт)" if s[11] == 1 else ""
+        skills = get_seal_skills(s[0]); baby = " 🍼(растёт)" if s[11] == 1 else ""
         t += f"{st} *{s[2]}* — ур.{s[9]}{baby}\n  💪{s[7]} 🛡️{s[8]} 🍖{s[6]} ❤️{s[3]}/{s[4]}\n"
         if skills: t += f"  Навыки: {', '.join(sk['name'] for sk in skills)}\n"
         t += "\n"
@@ -1036,7 +941,7 @@ def cmd_inventory(message):
     t = "🎒 *Инвентарь*\n\n"
     cats = {"food":"🍴 Еда","medkit":"💊 Медицина","weapon":"⚔️ Оружие","armor":"🛡️ Броня",
             "helmet":"🪖 Шлемы","shield":"🛡️ Щиты","accessory":"🎀 Аксессуары",
-            "resource":"📦 Ресурсы","artifact":"✨ Артефакты","chest":"📦 Сундуки"}
+            "resource":"📦 Ресурсы","artifact":"✨ Артефакты","chest":"📦 Сундуки","potion":"🧪 Зелья"}
     grouped = {}
     for item in inv: grouped.setdefault(item[3], []).append(item)
     for cat, label in cats.items():
@@ -1050,6 +955,7 @@ def cmd_inventory(message):
     m = types.InlineKeyboardMarkup()
     m.add(types.InlineKeyboardButton("💰 Продать предметы", callback_data="sellmenu"))
     m.add(types.InlineKeyboardButton("📦 Открыть сундуки", callback_data="chestmenu"))
+    m.add(types.InlineKeyboardButton("🧪 Использовать зелье", callback_data="potionmenu"))
     bot.send_message(uid, t, parse_mode='Markdown', reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data == "sellmenu")
@@ -1080,31 +986,90 @@ def chest_menu(call):
     chests = [i for i in inv if i[3] == "chest"]
     if not chests: bot.answer_callback_query(call.id, "Нет сундуков!"); return
     m = types.InlineKeyboardMarkup()
-    for i in chests:
-        m.add(types.InlineKeyboardButton(f"Открыть {i[2]} (x{i[4]})", callback_data=f"openchest_{i[2]}"))
+    for i in chests: m.add(types.InlineKeyboardButton(f"Открыть {i[2]} (x{i[4]})", callback_data=f"openchest_{i[2]}"))
     m.add(types.InlineKeyboardButton("◀️", callback_data="invback"))
     bot.edit_message_text("📦 Какие сундуки открыть?", call.message.chat.id, call.message.message_id, reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("openchest_"))
 def open_chest_do(call):
-    uid = call.from_user.id
-    chest_name = call.data[10:]
+    uid = call.from_user.id; chest_name = call.data[10:]
     m = re.search(r'
 $$
 ([A-Z])
 $$
 ', chest_name)
     if not m: bot.answer_callback_query(call.id, "Ошибка!"); return
-    rarity = m.group(1)
-    result = open_chest(uid, rarity)
+    result = open_chest(uid, m.group(1))
     bot.answer_callback_query(call.id, result[:100])
+
+@bot.callback_query_handler(func=lambda c: c.data == "potionmenu")
+def potion_menu(call):
+    uid = call.from_user.id; inv = get_inv(uid)
+    potions = [i for i in inv if i[3] == "potion"]
+    if not potions: bot.answer_callback_query(call.id, "Нет зелий!"); return
+    seals = get_player_seals(uid)
+    if not seals: bot.answer_callback_query(call.id, "Нет тюленей!"); return
+    m = types.InlineKeyboardMarkup()
+    for p in potions:
+        eff = POTION_EFFECTS.get(p[2], {})
+        desc = ""
+        if eff.get("stat") == "heal_full": desc = "полное лечение"
+        elif eff.get("stat") == "heal": desc = f"+{eff.get('amount',0)} HP"
+        elif eff.get("stat") == "str": desc = f"+{eff.get('amount',0)} силы"
+        elif eff.get("stat") == "def": desc = f"+{eff.get('amount',0)} защиты"
+        else: desc = eff.get("stat", "эффект")
+        m.add(types.InlineKeyboardButton(f"{p[2]} x{p[4]} ({desc})", callback_data=f"ptsel_{p[2]}"))
+    m.add(types.InlineKeyboardButton("◀️", callback_data="invback"))
+    bot.edit_message_text("🧪 Какое зелье использовать?", call.message.chat.id, call.message.message_id, reply_markup=m)
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("ptsel_"))
+def potion_select_seal(call):
+    uid = call.from_user.id; pname = call.data[6:]
+    seals = get_player_seals(uid)
+    if not seals: bot.answer_callback_query(call.id, "Нет тюленей!"); return
+    m = types.InlineKeyboardMarkup()
+    for s in seals: m.add(types.InlineKeyboardButton(f"{s[2]} (ур.{s[9]})", callback_data=f"ptuse_{s[0]}_{pname}"))
+    m.add(types.InlineKeyboardButton("◀️", callback_data="potionmenu"))
+    bot.edit_message_text("Кому дать зелье?", call.message.chat.id, call.message.message_id, reply_markup=m)
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("ptuse_"))
+def potion_use(call):
+    uid = call.from_user.id; p = call.data.split("_"); sid = int(p[1]); pname = "_".join(p[2:])
+    if get_item_qty(uid, pname) <= 0: bot.answer_callback_query(call.id, "Нет зелья!"); return
+    seal = get_seal(sid)
+    if not seal: bot.answer_callback_query(call.id, "Нет тюленя!"); return
+    eff = POTION_EFFECTS.get(pname, {})
+    stat = eff.get("stat"); amt = eff.get("amount", 0)
+    msg = f"🧪 {seal[2]} выпил {pname}!\n"
+    if stat == "heal_full":
+        update_seal(sid, health=seal[4]); msg += "❤️ Полное лечение!"
+    elif stat == "heal":
+        update_seal(sid, health=min(seal[4], seal[3]+amt)); msg += f"❤️ +{amt} HP!"
+    elif stat == "str":
+        update_seal(sid, strength=seal[7]+amt); msg += f"💪 +{amt} силы (временно)!"
+    elif stat == "def":
+        update_seal(sid, defense=seal[8]+amt); msg += f"🛡️ +{amt} защиты (временно)!"
+    elif stat == "berserk":
+        msg += "😤 Режим берсерка активирован!"
+    elif stat == "freeze":
+        msg += "🧊 Способность заморозки получена!"
+    elif stat == "dodge":
+        msg += f"💨 +{amt}% к уклонению!"
+    elif stat == "poison":
+        msg += f"☠️ Отравление на {amt} урона!"
+    elif stat == "light":
+        msg += "✨ Подземелье освещено!"
+    else:
+        msg += "Эффект применён!"
+    remove_from_inv(uid, pname)
+    bot.answer_callback_query(call.id, msg[:100])
 
 @bot.callback_query_handler(func=lambda c: c.data == "invback")
 def inv_back(call):
     uid = call.from_user.id; inv = get_inv(uid)
     if not inv: bot.send_message(call.from_user.id, "Пусто!"); return
     t = "🎒 *Инвентарь*\n\n"
-    cats = {"food":"🍴 Еда","medkit":"💊","weapon":"⚔️","armor":"🛡️","helmet":"🪖","shield":"🛡️","accessory":"🎀","resource":"📦","artifact":"✨","chest":"📦"}
+    cats = {"food":"🍴 Еда","medkit":"💊","weapon":"⚔️","armor":"🛡️","helmet":"🪖","shield":"🛡️","accessory":"🎀","resource":"📦","artifact":"✨","chest":"📦","potion":"🧪"}
     grouped = {}
     for item in inv: grouped.setdefault(item[3], []).append(item)
     for cat, label in cats.items():
@@ -1116,23 +1081,20 @@ def inv_back(call):
     m = types.InlineKeyboardMarkup()
     m.add(types.InlineKeyboardButton("💰 Продать", callback_data="sellmenu"))
     m.add(types.InlineKeyboardButton("📦 Сундуки", callback_data="chestmenu"))
+    m.add(types.InlineKeyboardButton("🧪 Зелья", callback_data="potionmenu"))
     bot.edit_message_text(t, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=m)
 
 @bot.message_handler(func=lambda m: m.text == "💰 Продажа")
 def menu_sell(message):
     uid = message.from_user.id; inv = get_inv(uid)
     if not inv: bot.send_message(uid, "Инвентарь пуст!"); return
-    t = "💰 *Продажа предметов*\n\nЦены продажи:\n"
-    grouped = {}
-    for item in inv: grouped.setdefault(item[3], []).append(item)
+    t = "💰 *Продажа предметов*\n\n"
     m = types.InlineKeyboardMarkup()
-    for cat in ("resource","weapon","armor","helmet","shield","artifact","chest","food","medkit","accessory"):
-        items = grouped.get(cat, [])
-        for i in items:
-            sp = get_sell_price(i[2])
-            if sp > 0:
-                t += f"  {i[2]} x{i[4]} — 🐟{sp}/шт\n"
-                m.add(types.InlineKeyboardButton(f"Продать {i[2]} (🐟{sp})", callback_data=f"sellitem_{i[2]}"))
+    for i in inv:
+        sp = get_sell_price(i[2])
+        if sp > 0:
+            t += f"  {i[2]} x{i[4]} — 🐟{sp}/шт\n"
+            m.add(types.InlineKeyboardButton(f"Продать {i[2]} (🐟{sp})", callback_data=f"sellitem_{i[2]}"))
     m.add(types.InlineKeyboardButton("📦 Открыть сундуки", callback_data="chestmenu"))
     bot.send_message(uid, t, parse_mode='Markdown', reply_markup=m)
 @bot.message_handler(commands=['setphoto'])
@@ -1165,30 +1127,20 @@ def menu_seal(message):
     if not seals: bot.send_message(uid, "Нет тюленей! /start"); return
     m = types.InlineKeyboardMarkup()
     for s in seals:
-        check_baby_growth(s[0])
-        baby = " 🍼" if s[11] == 1 else ""
+        check_baby_growth(s[0]); baby = " 🍼" if s[11] == 1 else ""
         m.add(types.InlineKeyboardButton(f"{s[2]} (ур.{s[9]}){baby}", callback_data=f"sinfo_{s[0]}"))
     bot.send_message(uid, "Выберите тюленя:", reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("sinfo_"))
 def seal_selected(call, sid=None):
     if sid is None: sid = int(call.data.split("_")[1])
-    check_baby_growth(sid)
-    seal = get_seal(sid)
+    check_baby_growth(sid); seal = get_seal(sid)
     if not seal: bot.answer_callback_query(call.id, "Не найден!"); return
     uid = call.from_user.id; fn = get_fishnets(uid)
-    es, ed, eh = get_effective_stats(sid); mb = get_mood_bonus(sid)
-    skills = get_seal_skills(sid)
+    es, ed, eh = get_effective_stats(sid); mb = get_mood_bonus(sid); skills = get_seal_skills(sid)
     t = f"🦭 *{seal[2]}*\n🐟 Рыбнетки: {fn}\n\n📊 Ур:{seal[9]} (оп:{seal[10]}/{exp_for_level(seal[9])})\n"
-    t += f"❤️ Здоровье: {seal[3]}/{seal[4]}"
-    if eh != seal[4]: t += f" (с экип: {eh})"
-    t += f"\n😊 Настроение: {seal[5]}"
-    if mb > 0: t += f" (+{mb})"
-    t += f"\n🍖 Сытость: {seal[6]}\n💪 Сила: {seal[7]}"
-    if es != seal[7]: t += f" (с экип: {es})"
-    t += f"\n🛡️ Защита: {seal[8]}"
-    if ed != seal[8]: t += f" (с экип: {ed})"
-    t += "\n"
+    t += f"❤️ {seal[3]}/{seal[4]}"+(f" (экип:{eh})" if eh!=seal[4] else "")+"\n"
+    t += f"😊 {seal[5]}"+(f" (+{mb})" if mb>0 else "")+f"\n🍖 {seal[6]}\n💪 {seal[7]}"+(f" (экип:{es})" if es!=seal[7] else "")+f"\n🛡️ {seal[8]}"+(f" (экип:{ed})" if ed!=seal[8] else "")+"\n"
     if skills:
         t += "\n*Навыки:*\n"
         for sk in skills: t += f"  {sk['name']}\n"
@@ -1202,17 +1154,13 @@ def seal_selected(call, sid=None):
     t += f"\n🎒 Экип: {', '.join(eq) if eq else 'нет'}\n"
     if seal[11] == 1:
         try:
-            born = datetime.fromisoformat(seal[12])
-            days_left = BABY_GROW_DAYS - (datetime.now() - born).days
+            born = datetime.fromisoformat(seal[12]); days_left = BABY_GROW_DAYS - (datetime.now() - born).days
             t += f"\n🍼 Тюленёнок! Вырастет через {max(0, days_left)} дн.\n"
         except: t += "\n🍼 Тюленёнок!\n"
     m = types.InlineKeyboardMarkup(row_width=2)
-    m.add(types.InlineKeyboardButton("🍖 Кормить", callback_data=f"feed_{sid}"),
-          types.InlineKeyboardButton("🎾 Играть", callback_data=f"play_{sid}"))
-    m.add(types.InlineKeyboardButton("💊 Лечить", callback_data=f"heal_{sid}"),
-          types.InlineKeyboardButton("👕 Экип", callback_data=f"equip_{sid}"))
-    m.add(types.InlineKeyboardButton("📸 Фото", callback_data=f"sphoto_{sid}"),
-          types.InlineKeyboardButton("✏️ Имя", callback_data=f"rename_{sid}"))
+    m.add(types.InlineKeyboardButton("🍖 Кормить", callback_data=f"feed_{sid}"), types.InlineKeyboardButton("🎾 Играть", callback_data=f"play_{sid}"))
+    m.add(types.InlineKeyboardButton("💊 Лечить", callback_data=f"heal_{sid}"), types.InlineKeyboardButton("👕 Экип", callback_data=f"equip_{sid}"))
+    m.add(types.InlineKeyboardButton("📸 Фото", callback_data=f"sphoto_{sid}"), types.InlineKeyboardButton("✏️ Имя", callback_data=f"rename_{sid}"))
     m.add(types.InlineKeyboardButton("◀️ Назад", callback_data="back_main"))
     cid = call.message.chat.id; mid = call.message.message_id; pp = seal[20]
     if pp and os.path.exists(pp):
@@ -1244,9 +1192,8 @@ def seal_do_feed(call):
     if not info: bot.answer_callback_query(call.id, "Не найден!"); return
     seal = get_seal(sid)
     if not seal: return
-    update_seal(sid, satiety=min(100, seal[6]+info["satiety"]), mood=min(100, seal[5]+info.get("mood",5)))
-    remove_from_inv(uid, name)
-    bot.answer_callback_query(call.id, f"{seal[2]} съел {name}!")
+    update_seal(sid, satiety=min(100,seal[6]+info["satiety"]), mood=min(100,seal[5]+info.get("mood",5)))
+    remove_from_inv(uid, name); bot.answer_callback_query(call.id, f"{seal[2]} съел {name}!")
     update_quest_progress(uid, "feed", 1); seal_selected(call, sid)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("heal_"))
@@ -1256,8 +1203,7 @@ def seal_heal(call):
     if seal[3] >= seal[4]: bot.answer_callback_query(call.id, "Здоров!"); return
     if get_item_qty(uid, "Аптечка 💊") <= 0: bot.answer_callback_query(call.id, "Нет аптечек!"); return
     h = SHOP_ITEMS["Аптечка 💊"]["heal"]
-    update_seal(sid, health=min(seal[4], seal[3]+h))
-    remove_from_inv(uid, "Аптечка 💊")
+    update_seal(sid, health=min(seal[4],seal[3]+h)); remove_from_inv(uid, "Аптечка 💊")
     bot.answer_callback_query(call.id, f"💊 +{h} HP!"); seal_selected(call, sid)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("play_"))
@@ -1337,14 +1283,13 @@ def back_to_main(call):
 def menu_shop(message):
     uid = message.from_user.id; fn = get_fishnets(uid)
     td = max(get_shop_disc(), get_faction_disc(uid))
-    t = f"🛒 *Магазин*\n🐟 {fn}\n"
-    if td > 0: t += f"Скидка: {int(td*100)}%\n"
-    t += "\n"; m = types.InlineKeyboardMarkup(row_width=1)
+    t = f"🛒 *Магазин*\n🐟 {fn}\n"+(f"Скидка: {int(td*100)}%\n" if td>0 else "")+"\n"
+    m = types.InlineKeyboardMarkup(row_width=1)
     for n, i in SHOP_ITEMS.items():
-        pr = int(i["price"] * (1 - td))
-        if i["type"] == "food": t += f"  {n} — 🐟{pr} (+{i['satiety']})\n"
-        elif i["type"] == "medkit": t += f"  {n} — 🐟{pr} (+{i['heal']}HP)\n"
-        elif i["type"] == "accessory": t += f"  {n} — 🐟{pr} (+{ACCESSORY_BONUSES.get(n,0)}😊)\n"
+        pr = int(i["price"]*(1-td))
+        if i["type"]=="food": t += f"  {n} — 🐟{pr} (+{i['satiety']})\n"
+        elif i["type"]=="medkit": t += f"  {n} — 🐟{pr} (+{i['heal']}HP)\n"
+        elif i["type"]=="accessory": t += f"  {n} — 🐟{pr} (+{ACCESSORY_BONUSES.get(n,0)}😊)\n"
         m.add(types.InlineKeyboardButton(f"{n} — 🐟{pr}", callback_data=f"buy_{n}"))
     bot.send_message(uid, t, parse_mode='Markdown', reply_markup=m)
 
@@ -1352,27 +1297,51 @@ def menu_shop(message):
 def shop_buy(call):
     uid = call.from_user.id; name = call.data[4:]; info = SHOP_ITEMS.get(name)
     if not info: bot.answer_callback_query(call.id, "Не найден!"); return
-    td = max(get_shop_disc(), get_faction_disc(uid)); pr = int(info["price"] * (1 - td))
+    td = max(get_shop_disc(), get_faction_disc(uid)); pr = int(info["price"]*(1-td))
     if get_fishnets(uid) < pr: bot.answer_callback_query(call.id, "Не хватает 🐟!"); return
-    add_fishnets(uid, -pr); add_to_inv(uid, name, info["type"])
-    update_quest_progress(uid, "shop", 1)
+    add_fishnets(uid, -pr); add_to_inv(uid, name, info["type"]); update_quest_progress(uid, "shop", 1)
     bot.answer_callback_query(call.id, f"Куплено: {name} за 🐟{pr}!")
 
+# ==================== КРАФТ (с тирами) ====================
 @bot.message_handler(commands=['craft'])
 @bot.message_handler(func=lambda m: m.text == "🔨 Крафт")
 def menu_craft(message):
-    uid = message.from_user.id; t = "🔨 *Крафт*\n\n"
-    for r in CRAFT_RECIPES:
+    uid = message.from_user.id
+    m = types.InlineKeyboardMarkup()
+    for tid, td_info in CRAFT_TIERS.items():
+        recipes_in_tier = [r for r in CRAFT_RECIPES if r.get("tier") == tid]
+        cnt = len(recipes_in_tier)
+        avail = sum(1 for r in recipes_in_tier if can_craft(uid, r))
+        m.add(types.InlineKeyboardButton(f"{td_info['name']} ({avail}/{cnt})", callback_data=f"cfttier_{tid}"))
+    bot.send_message(uid, "🔨 *Крафт*\n\nВыберите тиp:", parse_mode='Markdown', reply_markup=m)
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("cfttier_"))
+def craft_tier(call):
+    uid = call.from_user.id; tid = int(call.data.split("_")[1])
+    recipes = [r for r in CRAFT_RECIPES if r.get("tier") == tid]
+    if not recipes: bot.answer_callback_query(call.id, "Пусто!"); return
+    td_info = CRAFT_TIERS.get(tid, {"name": "??"})
+    t = f"{td_info['name']}\n\n"
+    m = types.InlineKeyboardMarkup()
+    for r in recipes:
         rt = ", ".join([f"{r2} x{a}" for r2, a in r["resources"].items()])
         b = ITEM_BONUSES.get(r["name"], {}); bt = ""
         if "str" in b: bt += f"💪+{b['str']} "
         if "def" in b: bt += f"🛡️+{b['def']} "
         if "hp" in b: bt += f"❤️+{b['hp']}"
-        t += f"{r['name']} ({bt.strip()})\n  {rt}\n\n"
-    m = types.InlineKeyboardMarkup()
-    for r in CRAFT_RECIPES:
+        t += f"{'✅' if can_craft(uid, r) else '❌'} {r['name']} ({bt.strip()})\n  {r.get('desc','')}\n  {rt}\n\n"
         m.add(types.InlineKeyboardButton(f"{'✅' if can_craft(uid, r) else '❌'} {r['name']}", callback_data=f"cft_{r['name']}"))
-    bot.send_message(uid, t, parse_mode='Markdown', reply_markup=m)
+    m.add(types.InlineKeyboardButton("◀️ Назад", callback_data="cftback"))
+    bot.edit_message_text(t, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=m)
+
+@bot.callback_query_handler(func=lambda c: c.data == "cftback")
+def craft_back(call):
+    uid = call.from_user.id; m = types.InlineKeyboardMarkup()
+    for tid, td_info in CRAFT_TIERS.items():
+        recipes_in_tier = [r for r in CRAFT_RECIPES if r.get("tier") == tid]
+        cnt = len(recipes_in_tier); avail = sum(1 for r in recipes_in_tier if can_craft(uid, r))
+        m.add(types.InlineKeyboardButton(f"{td_info['name']} ({avail}/{cnt})", callback_data=f"cfttier_{tid}"))
+    bot.edit_message_text("🔨 *Крафт*\n\nВыберите тиp:", call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("cft_"))
 def craft_do(call):
@@ -1387,6 +1356,7 @@ def craft_do(call):
     if pl and pl[5] == "hunters": add_faction_rep(uid, 1)
     bot.answer_callback_query(call.id, f"Скрафчено: {name}!")
 
+# ==================== РАБОТА ====================
 @bot.message_handler(commands=['work'])
 @bot.message_handler(func=lambda m: m.text == "💼 Работа")
 def menu_work(message):
@@ -1445,6 +1415,7 @@ def work_do(call):
     update_quest_progress(uid, "work", 1)
     bot.edit_message_text(log, call.message.chat.id, call.message.message_id, parse_mode='Markdown')
 
+# ==================== БОЙ ====================
 @bot.message_handler(commands=['battle'])
 @bot.message_handler(func=lambda m: m.text == "⚔️ Бой")
 def menu_battle(message):
@@ -1474,6 +1445,51 @@ def do_battle(call):
         dmg = max(1, dmg - bdef + random.randint(-3,5)); bhp -= dmg
         log.append(f"Р{rnd}: {seal[2]} →{dmg} (босс {max(0,bhp)}❤️)")
         if bhp <= 0: break
+        if random.random() < sum
+# Монстры и их характеристики
+MONSTERS = [
+    {"name": "Акула 🦈", "health": 150, "strength": 12, "defense": 8, "level": 5, "xp_reward": 50, "drops": ["Акулий зуб 🦈", "Чешуя 🐟"]},
+    {"name": "Кракен 🐙", "health": 200, "strength": 15, "defense": 12, "level": 7, "xp_reward": 75, "drops": ["Щупальце 🐙", "Жемчуг 🫧"]},
+    {"name": "Морской дракон 🐲", "health": 180, "strength": 14, "defense": 10, "level": 6, "xp_reward": 60, "drops": ["Чешуя 🐟", "Кристалл 💎"]},
+    {"name": "Слизь 🐌", "health": 120, "strength": 7, "defense": 5, "level": 3, "xp_reward": 30, "drops": ["Слизь 🐌"]},
+    {"name": "Ледяной Голем ❄️", "health": 220, "strength": 16, "defense": 14, "level": 8, "xp_reward": 85, "drops": ["Лёд 🧊"]},
+    {"name": "Тёмный Рыцарь 🖤", "health": 160, "strength": 13, "defense": 11, "level": 5, "xp_reward": 55, "drops": ["Чернила 🖤", "Клык 🦷"]},
+]
+
+# Боссы
+BOSSES = [
+    {"name": "Древний Кракен 🦑", "health": 500, "strength": 25, "defense": 20, "level": 10, "xp_reward": 200, "drops": ["Щупальце 🐙", "Жемчуг 🫧", "Рог нарвала 🦏"]},
+    {"name": "Король Акул 🦈👑", "health": 450, "strength": 22, "defense": 18, "level": 9, "xp_reward": 180, "drops": ["Акулий зуб 🦈", "Чешуя 🐟", "Костяной меч 🗡️"]},
+    {"name": "Ледяной Властелин ❄️", "health": 480, "strength": 24, "defense": 16, "level": 10, "xp_reward": 190, "drops": ["Лёд 🧊", "Кристалл 💎"]},
+]
+
+def get_monster(name):
+    for m in MONSTERS:
+        if m["name"] == name:
+            return m
+    return None
+
+def get_boss(name):
+    for b in BOSSES:
+        if b["name"] == name:
+            return b
+    return None
+# Система квестов
+QUESTS = [
+    {"type": "daily", "desc": "Поймай 5 рыб", "reward": 50, "item": "Апельсин 🍊"},
+    {"type": "weekly", "desc": "Сразись с 3 акулами", "reward": 100, "item": "Мороженое 🍦"},
+    {"type": "dungeon", "desc": "Пройди 3 этажа подземелья", "reward": 150, "item": "Компас мудреца 🧭"},
+    {"type": "hunt", "desc": "Убей 5 слизней", "reward": 75, "item": "Жемчужное ожерелье 🫧"},
+]
+
+def get_quest(user_id, quest_type):
+    for q in QUESTS:
+        if q["type"] == quest_type:
+            return q
+    return None
+
+# Награды за квесты
+REWARDS = {
         if random.random() < sum(0.10 for s in skills if s["effect"]=="double_strike") and bhp > 0:
             d2 = max(1, es - bdef + random.randint(-3,5)); bhp -= d2; log.append(f"⚔️ Двойной! →{d2}")
         if bhp <= 0: break
@@ -1501,7 +1517,7 @@ def do_battle(call):
     else: log.append("\n🤝 Ничья!")
     bot.edit_message_text("\n".join(log), call.message.chat.id, call.message.message_id, parse_mode='Markdown')
 
-# ==================== ПОДЗЕМЕЛЬЕ (10 этажей, несколько монстров, сундуки) ====================
+# ==================== ПОДЗЕМЕЛЬЕ ====================
 @bot.message_handler(commands=['dungeon'])
 @bot.message_handler(func=lambda m: m.text == "🏰 Подземелье")
 def menu_dungeon(message):
@@ -1531,7 +1547,6 @@ def dng_floor(call, sid, fl, mon_idx):
     config = DUNGEON_FLOORS_CONFIG[min(fl-1, len(DUNGEON_FLOORS_CONFIG)-1)]
     total_mons = config["monsters"]
     if mon_idx >= total_mons:
-        # Этаж пройден — выдаём сундук
         rarity = config["chest_rarity"]
         chest_name = f"Сундук [{rarity}] 📦"
         add_to_inv(call.from_user.id, chest_name, "chest", 1)
@@ -1812,11 +1827,11 @@ def qc_start(call):
 @bot.message_handler(commands=['trade'])
 @bot.message_handler(func=lambda m: m.text == "📦 Биржа")
 def menu_trade(message):
-    uid = message.from_user.id; m = types.InlineKeyboardMarkup()
+    m = types.InlineKeyboardMarkup()
     m.add(types.InlineKeyboardButton("📤 Создать", callback_data="trc"))
     m.add(types.InlineKeyboardButton("📋 Активные", callback_data="trl_0"))
     m.add(types.InlineKeyboardButton("📦 Мои", callback_data="trm"))
-    bot.send_message(uid, "📦 *Биржа*", parse_mode='Markdown', reply_markup=m)
+    bot.send_message(message.from_user.id, "📦 *Биржа*", parse_mode='Markdown', reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data == "trc")
 def trade_create(call):
@@ -2121,7 +2136,6 @@ def vote_cb(call):
         bot.edit_message_text(f"✅ *Активировано!*\n{ev['desc']}", call.message.chat.id, call.message.message_id, parse_mode='Markdown')
     else:
         bot.answer_callback_query(call.id, "Голос принят!")
-        bot.edit_message_text(f"🗳 Голос: {vote.upper()}\nНужно 3+ голоса.", call.message.chat.id, call.message.message_id, parse_mode='Markdown')
 
 # ==================== БРАКИ ====================
 @bot.message_handler(commands=['marry'])
@@ -2234,8 +2248,7 @@ def stats_decay():
                 nm = max(0, mood - random.randint(3, 8)); ns = max(0, sat - random.randint(5, 10))
                 nh = max(1, hp - random.randint(3, 8)) if ns < 20 else hp
                 c.execute("UPDATE seals SET mood=?,satiety=?,health=? WHERE seal_id=?", (nm, ns, nh, sid))
-                if is_baby == 1:
-                    check_baby_growth(sid)
+                if is_baby == 1: check_baby_growth(sid)
             conn.commit(); conn.close()
         except: pass
 
