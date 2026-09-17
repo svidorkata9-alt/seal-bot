@@ -1257,7 +1257,12 @@ def seal_feed(call):
         info = SHOP_ITEMS.get(i[2], {})
         m.add(types.InlineKeyboardButton(f"{i[2]} (x{i[4]}) +{info.get('satiety',0)}", callback_data=f"dfd_{sid}_{i[2]}"))
     m.add(types.InlineKeyboardButton("◀️", callback_data=f"sinfo_{sid}"))
-    bot.edit_message_text("Чем кормить?", call.message.chat.id, call.message.message_id, reply_markup=m)
+    try:
+        bot.edit_message_text("Чем кормить?", call.message.chat.id, call.message.message_id, reply_markup=m)
+    except:
+        try: bot.delete_message(call.message.chat.id, call.message.message_id)
+        except: pass
+        bot.send_message(call.message.chat.id, "Чем кормить?", reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("dfd_"))
 def seal_do_feed(call):
@@ -1328,7 +1333,12 @@ def seal_equip_menu(call):
         label = f"{i[2]} (x{i[4]})" + (f" [{ench}]" if ench else "")
         m.add(types.InlineKeyboardButton(label, callback_data=f"deq_{sid}_{i[2]}"))
     m.add(types.InlineKeyboardButton("◀️", callback_data=f"sinfo_{sid}"))
-    bot.edit_message_text("Что надеть?", call.message.chat.id, call.message.message_id, reply_markup=m)
+    try:
+        bot.edit_message_text("Что надеть?", call.message.chat.id, call.message.message_id, reply_markup=m)
+    except:
+        try: bot.delete_message(call.message.chat.id, call.message.message_id)
+        except: pass
+        bot.send_message(call.message.chat.id, "Что надеть?", reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("deq_"))
 def seal_do_equip(call):
@@ -1362,7 +1372,12 @@ def seal_potion_menu(call):
         desc = POTION_EFFECTS.get(info["effect"], "?") if info else "?"
         m.add(types.InlineKeyboardButton(f"{i[2]} (x{i[4]}) — {desc}", callback_data=f"spotuse_{sid}_{i[2]}"))
     m.add(types.InlineKeyboardButton("◀️", callback_data=f"sinfo_{sid}"))
-    bot.edit_message_text("🧪 Какое зелье использовать?", call.message.chat.id, call.message.message_id, reply_markup=m)
+    try:
+        bot.edit_message_text("🧪 Какое зелье использовать?", call.message.chat.id, call.message.message_id, reply_markup=m)
+    except:
+        try: bot.delete_message(call.message.chat.id, call.message.message_id)
+        except: pass
+        bot.send_message(call.message.chat.id, "🧪 Какое зелье использовать?", reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("spotuse_"))
 def seal_potion_use(call):
