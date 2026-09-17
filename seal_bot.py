@@ -878,8 +878,10 @@ def generate_daily_quests(uid):
     if c.fetchall(): conn.close(); return
     c.execute("DELETE FROM daily_quests WHERE user_id=? AND date!=?", (uid, today))
     for q in random.sample(QUEST_TEMPLATES, 3):
-        c.execute("INSERT INTO daily_quests (user_id,quest_type,quest_target,quest_progress,quest_reward,date,claimed) VALUES (?,?,?,?,0,?,0)", (uid, q["type"], q["target"], q["reward"], today))
+        c.execute("INSERT INTO daily_quests (user_id,quest_type,quest_target,quest_progress,quest_reward,date,claimed) VALUES (?,?,?,0,?,?,0)",
+                  (uid, q["type"], q["target"], q["reward"], today))
     conn.commit(); conn.close()
+
 
 def update_quest_progress(uid, qt, amt=1):
     today = date.today().isoformat()
