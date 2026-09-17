@@ -3,7 +3,7 @@ from telebot import types
 import sqlite3, random, threading, time, os, shutil, json
 from datetime import datetime, date, timedelta
 
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "PLACEHOLDER_TOKEN")
 bot = telebot.TeleBot(TOKEN)
 DB_PATH = "seal_life.db"
 BACKUP_DIR = "backups"
@@ -12,8 +12,9 @@ FISHING_COOLDOWN_MIN = 10
 MAX_CLAN_MEMBERS = 20
 CLAN_DUNGEON_MIN_LEVEL = 4
 CLAN_DUNGEON_FLOORS = 10
+PLAY_COOLDOWN_MIN = 15
 
-# ==================== МИГРАЦИИ ====================
+# ==================== БЭКАП И МИГРАЦИИ ====================
 def backup_db():
     if not os.path.exists(DB_PATH): return None
     os.makedirs(BACKUP_DIR, exist_ok=True)
@@ -38,84 +39,35 @@ def set_db_version(conn, v):
     c.execute("INSERT OR REPLACE INTO _meta (key,value) VALUES ('schema_version',?)", (str(v),))
     conn.commit()
 
-def _col(c, t, col, cd):
-    c.execute(f"PRAGMA table_info({t})")
-    cols = [r[1] for r in c.fetchall()]
-    if col not in cols: c.execute(f"ALTER TABLE {t} ADD COLUMN {col} {cd}")
-
 def migration_1(c):
-    c.execute('''CREATE TABLE IF NOT EXISTS players (
-        user_id INTEGER PRIMARY KEY, username TEXT, display_name TEXT, photo_path TEXT,
-        fishnets INTEGER DEFAULT 100, faction TEXT, faction_rep INTEGER DEFAULT 0, fish_cooldown TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS seals (
-        seal_id INTEGER PRIMARY KEY AUTOINCREMENT, owner_id INTEGER, name TEXT,
-        health INTEGER DEFAULT 100, max_health INTEGER DEFAULT 100, mood INTEGER DEFAULT 80,
-        satiety INTEGER DEFAULT 80, strength INTEGER DEFAULT 10, defense INTEGER DEFAULT 5,
-        level INTEGER DEFAULT 1, exp INTEGER DEFAULT 0, is_baby INTEGER DEFAULT 0, born_at TEXT,
-        equipped_weapon TEXT, equipped_armor TEXT, equipped_helmet TEXT, equipped_shield TEXT,
-        equipped_accessory TEXT, work_cooldown TEXT, play_cooldown TEXT, photo_path TEXT,
-        work_cooldown_min INTEGER DEFAULT 0)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS marriages (
-        marriage_id INTEGER PRIMARY KEY AUTOINCREMENT, seal1_id INTEGER, seal2_id INTEGER,
-        player1_id INTEGER, player2_id INTEGER, created_at TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS inventory (
-        inv_id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, item_name TEXT,
-        item_type TEXT, quantity INTEGER DEFAULT 1)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS daily_quests (
-        quest_id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, quest_type TEXT,
-        quest_target INTEGER, quest_progress INTEGER DEFAULT 0, quest_reward INTEGER,
-        date TEXT, claimed INTEGER DEFAULT 0)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS dungeon_runs (
-        run_id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, seal_id INTEGER,
-        current_floor INTEGER DEFAULT 1, active INTEGER DEFAULT 0)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS trade_offers (
-        offer_id INTEGER PRIMARY KEY AUTOINCREMENT, seller_id INTEGER, item_name TEXT,
-        item_type TEXT, price INTEGER, created_at TEXT, active INTEGER DEFAULT 1)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS votes (
-        vote_id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, event_type TEXT,
-        vote TEXT, date TEXT, UNIQUE(user_id, date))''')
-    c.execute('''CREATE TABLE IF NOT EXISTS active_events (
-        event_id INTEGER PRIMARY KEY AUTOINCREMENT, event_type TEXT, effect TEXT,
-        expires_at TEXT, active INTEGER DEFAULT 1)''')
+    c.execute("CREATE TABLE IF NOT EXISTS players (user_id INTEGER PRIMARY KEY, username TEXT, display_name TEXT, photo_path TEXT, fishnets INTEGER DEFAULT 100, faction TEXT, faction_rep INTEGER DEFAULT 0, fish_cooldown TEXT)")
+    c.execute("CREATE TABLE IF NOT EXISTS seals (seal_id INTEGER PRIMARY KEY AUTOINCREMENT, owner_id INTEGER, name TEXT, health INTEGER DEFAULT 100, max_health INTEGER DEFAULT 100, mood INTEGER DEFAULT 80, satiety INTEGER DEFAULT 80, strength INTEGER DEFAULT 10, defense INTEGER DEFAULT 5, level INTEGER DEFAULT 1, exp INTEGER DEFAULT 0, is_baby INTEGER DEFAULT 0, born_at TEXT, equipped_weapon TEXT, equipped_armor TEXT, equipped_helmet TEXT, equipped_shield TEXT, equipped_accessory TEXT, work_cooldown TEXT, play_cooldown TEXT, photo_path TEXT, work_cooldown_min INTEGER DEFAULT 0)")
+    c.execute("CREATE TABLE IF NOT EXISTS marriages (marriage_id INTEGER PRIMARY KEY AUTOINCREMENT, seal1_id INTEGER, seal2_id INTEGER, player1_id INTEGER, player2_id INTEGER, created_at TEXT)")
+    c.execute("CREATE TABLE IF NOT EXISTS inventory (inv_id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, item_name TEXT, item_type TEXT, quantity INTEGER DEFAULT 1)")
+    c.execute("CREATE TABLE IF NOT EXISTS daily_quests (quest_id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, quest_type TEXT, quest_target INTEGER, quest_progress INTEGER DEFAULT 0, quest_reward INTEGER, date TEXT, claimed INTEGER DEFAULT 0)")
+    c.execute("CREATE TABLE IF NOT EXISTS dungeon_runs (run_id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, seal_id INTEGER, current_floor INTEGER DEFAULT 1, active INTEGER DEFAULT 0)")
+    c.execute("CREATE TABLE IF NOT EXISTS trade_offers (offer_id INTEGER PRIMARY KEY AUTOINCREMENT, seller_id INTEGER, item_name TEXT, item_type TEXT, price INTEGER, created_at TEXT, active INTEGER DEFAULT 1)")
+    c.execute("CREATE TABLE IF NOT EXISTS votes (vote_id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, event_type TEXT, vote TEXT, date TEXT, UNIQUE(user_id, date))")
+    c.execute("CREATE TABLE IF NOT EXISTS active_events (event_id INTEGER PRIMARY KEY AUTOINCREMENT, event_type TEXT, effect TEXT, expires_at TEXT, active INTEGER DEFAULT 1)")
 
 def migration_2(c):
-    c.execute('''CREATE TABLE IF NOT EXISTS seal_skills (
-        skill_id INTEGER PRIMARY KEY AUTOINCREMENT, seal_id INTEGER, skill_name TEXT,
-        skill_effect TEXT, acquired_at TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS duels (
-        duel_id INTEGER PRIMARY KEY AUTOINCREMENT, challenger_id INTEGER, opponent_id INTEGER,
-        challenger_seal_id INTEGER, opponent_seal_id INTEGER, status TEXT DEFAULT 'pending',
-        winner_id INTEGER, reward INTEGER, created_at TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS quest_chains (
-        chain_id INTEGER PRIMARY KEY, name TEXT, story TEXT, steps_json TEXT,
-        reward_json TEXT, reward_fishnets INTEGER)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS player_quest_chains (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, chain_id INTEGER,
-        current_step INTEGER DEFAULT 0, step_progress INTEGER DEFAULT 0, completed INTEGER DEFAULT 0)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS clans (
-        clan_id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, emblem TEXT,
-        leader_id INTEGER, created_at TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS clan_members (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, clan_id INTEGER, user_id INTEGER, joined_at TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS clan_dungeons (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, clan_id INTEGER, current_floor INTEGER DEFAULT 1,
-        active INTEGER DEFAULT 0, started_by INTEGER)''')
+    c.execute("CREATE TABLE IF NOT EXISTS seal_skills (skill_id INTEGER PRIMARY KEY AUTOINCREMENT, seal_id INTEGER, skill_name TEXT, skill_effect TEXT, acquired_at TEXT)")
+    c.execute("CREATE TABLE IF NOT EXISTS duels (duel_id INTEGER PRIMARY KEY AUTOINCREMENT, challenger_id INTEGER, opponent_id INTEGER, challenger_seal_id INTEGER, opponent_seal_id INTEGER, status TEXT DEFAULT 'pending', winner_id INTEGER, reward INTEGER, created_at TEXT)")
+    c.execute("CREATE TABLE IF NOT EXISTS quest_chains (chain_id INTEGER PRIMARY KEY, name TEXT, story TEXT, steps_json TEXT, reward_json TEXT, reward_fishnets INTEGER)")
+    c.execute("CREATE TABLE IF NOT EXISTS player_quest_chains (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, chain_id INTEGER, current_step INTEGER DEFAULT 0, step_progress INTEGER DEFAULT 0, completed INTEGER DEFAULT 0)")
+    c.execute("CREATE TABLE IF NOT EXISTS clans (clan_id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, emblem TEXT, leader_id INTEGER, created_at TEXT)")
+    c.execute("CREATE TABLE IF NOT EXISTS clan_members (id INTEGER PRIMARY KEY AUTOINCREMENT, clan_id INTEGER, user_id INTEGER, joined_at TEXT)")
+    c.execute("CREATE TABLE IF NOT EXISTS clan_dungeons (id INTEGER PRIMARY KEY AUTOINCREMENT, clan_id INTEGER, current_floor INTEGER DEFAULT 1, active INTEGER DEFAULT 0, started_by INTEGER)")
     chains = [
         (1,"Потерянный компас","Старый мудрый тюлень потерял компас во время шторма.",
-         json.dumps([{"type":"dungeon_floor","target":3,"desc":"Найдите компас на 3-м этаже подземелья"},
-                     {"type":"battle_count","target":2,"desc":"Победите 2 боссов"},
-                     {"type":"collect_resource","target":3,"resource":"Жемчуг 🫧","desc":"Соберите 3 жемчуга"}]),
-         json.dumps({"item":"Компас мудреца 🧭","type":"accessory"}),200),
+         json.dumps([{"type":"dungeon_floor","target":3,"desc":"Дойдите до 3-го этажа подземелья"},{"type":"battle_count","target":2,"desc":"Победите 2 боссов"},{"type":"craft_item","target":1,"desc":"Скрафтите 1 предмет"}]),
+         json.dumps({"item":"Компас мудреца","type":"accessory"}),200),
         (2,"Тайна глубин","Древняя табличка говорит о сокровище на дне океана.",
-         json.dumps([{"type":"dungeon_complete","target":1,"desc":"Пройдите 1 подземелье полностью"},
-                     {"type":"craft_item","target":1,"desc":"Скрафтите 1 предмет"},
-                     {"type":"reach_level","target":10,"desc":"Достигните 10 уровня"}]),
-         json.dumps({"item":"Амулет глубин 🌊","type":"accessory"}),500),
+         json.dumps([{"type":"dungeon_complete","target":1,"desc":"Пройдите 1 подземелье полностью"},{"type":"reach_level","target":10,"desc":"Достигните 10 уровня"}]),
+         json.dumps({"item":"Амулет глубин","type":"accessory"}),500),
         (3,"Король арены","Станьте легендой среди тюленей!",
-         json.dumps([{"type":"duel_win","target":3,"desc":"Победите 3 игроков в дуэлях"},
-                     {"type":"battle_count","target":5,"desc":"Победите 5 боссов"},
-                     {"type":"clan_dungeon_floor","target":3,"desc":"Дойдите до 3 этажа кланового подземелья"}]),
-         json.dumps({"item":"Корона чемпиона 👑","type":"accessory"}),1000),
+         json.dumps([{"type":"duel_win","target":3,"desc":"Победите 3 игроков в дуэлях"},{"type":"battle_count","target":5,"desc":"Победите 5 боссов"}]),
+         json.dumps({"item":"Корона чемпиона","type":"accessory"}),1000),
     ]
     c.executemany("INSERT OR REPLACE INTO quest_chains VALUES (?,?,?,?,?,?)", chains)
 
@@ -126,21 +78,11 @@ def run_migrations():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     v = get_db_version(conn)
-    total = len(MIGRATIONS)
-    if v >= total:
-        conn.close()
-        return f"БД актуальна (v{v})"
-    for i in range(v, total):
-        try: MIGRATIONS[i](c)
-        except Exception as e:
-            conn.close()
-            raise RuntimeError(f"Миграция {i+1}: {e}")
-    set_db_version(conn, total)
+    for i in range(v, len(MIGRATIONS)):
+        MIGRATIONS[i](c)
+    set_db_version(conn, len(MIGRATIONS))
     conn.commit()
     conn.close()
-    return f"Миграции применены: {list(range(v+1,total+1))}"
-
-print(run_migrations())
 
 # ==================== КОНСТАНТЫ ====================
 SHOP_ITEMS = {
@@ -190,16 +132,15 @@ ITEM_TYPES = {}
 for _n,_i in SHOP_ITEMS.items(): ITEM_TYPES[_n]=_i["type"]
 for _r in CRAFT_RECIPES: ITEM_TYPES[_r["name"]]=_r["type"]
 ITEM_TYPES.update({"Компас мудреца 🧭":"accessory","Амулет глубин 🌊":"accessory","Корона чемпиона 👑":"accessory"})
-
 SEAL_SKILLS_POOL = [
     {"name":"Критический удар ⚡","effect":"crit_15","desc":"15% шанс двойного урона"},
     {"name":"Толстая кожа 🛡️","effect":"dmg_reduce_10","desc":"-10% получаемого урона"},
-    {"name":"Вампиризм 🩸","effect":"lifesteal_5","desc":"Восстанавливает 5% нанесённого урона"},
+    {"name":"Вампиризм 🩸","effect":"lifesteal_5","desc":"Восстанавливает 5% урона"},
     {"name":"Уклонение 💨","effect":"dodge_10","desc":"10% шанс увернуться"},
     {"name":"Берсерк 😤","effect":"berserk","desc":"+50% урона при HP<30%"},
-    {"name":"Регенерация 💚","effect":"regen","desc":"+5 HP/час дополнительно"},
+    {"name":"Регенерация 💚","effect":"regen","desc":"+5 HP/час"},
     {"name":"Шипы 🌵","effect":"thorns","desc":"Отражает 20% урона"},
-    {"name":"Двойной удар ⚔️","effect":"double_strike","desc":"10% шанс атаковать дважды"},
+    {"name":"Двойной удар ⚔️","effect":"double_strike","desc":"10% шанс 2 атаки"},
 ]
 DUNGEON_MONSTERS = [
     {"name":"Фугу 🐡","hp":30,"str":8,"def":3,"drops":{"Жало 🐡":0.7}},
@@ -212,7 +153,6 @@ DUNGEON_MONSTERS = [
     {"name":"Электрический скат ⚡","hp":55,"str":14,"def":4,"drops":{"Чешуя 🐟":0.5,"Жало 🐡":0.3}},
     {"name":"Гигантская медуза 🪼","hp":45,"str":11,"def":3,"drops":{"Жало 🐡":0.6}},
     {"name":"Морской дьявол 😈","hp":90,"str":16,"def":9,"drops":{"Жемчуг 🫧":0.3,"Чешуя 🐟":0.4}},
-    {"name":"Глубинный краб 🦀","hp":70,"str":13,"def":14,"drops":{"Панцирь 🦀":0.7,"Жемчуг 🫧":0.1}},
 ]
 BOSSES = [
     {"name":"Краб-босс 🦀","drops":{"Панцирь 🦀":0.8}},{"name":"Акула 🦈","drops":{"Акулий зуб 🦈":0.8}},
@@ -237,7 +177,6 @@ JOBS = [
     {"name":"Водолаз 🤿","desc":"Исследовать глубины","reward_min":40,"reward_max":80,"cooldown_min":50,"mood_cost":10,"satiety_cost":18},
     {"name":"Актёр 🎭","desc":"Выступать в шоу","reward_min":35,"reward_max":70,"cooldown_min":40,"mood_cost":6,"satiety_cost":12},
 ]
-PLAY_COOLDOWN_MIN = 15
 FISH_TYPES = [
     {"name":"Малёк 🐤","reward":(3,8),"correct":"Подсечь!"},{"name":"Окунь 🐟","reward":(8,15),"correct":"Подсечь!"},
     {"name":"Сёмга 🐠","reward":(15,25),"correct":"Ждать"},{"name":"Золотая рыбка ✨","reward":(30,50),"correct":"Ждать"},
@@ -533,17 +472,18 @@ def get_duel(did):
     conn=sqlite3.connect(DB_PATH);c=conn.cursor()
     c.execute("SELECT * FROM duels WHERE duel_id=?",(did,));r=c.fetchone();conn.close();return r
 
+# ==================== ЕЖЕДНЕВНЫЕ ЗАДАНИЯ (ОТДЕЛЬНО ОТ ЦЕПОЧЕК) ====================
 def generate_daily_quests(uid):
     today=date.today().isoformat();conn=sqlite3.connect(DB_PATH);c=conn.cursor()
     c.execute("SELECT * FROM daily_quests WHERE user_id=? AND date=?",(uid,today))
     if c.fetchall(): conn.close();return
     c.execute("DELETE FROM daily_quests WHERE user_id=? AND date!=?",(uid,today))
     for q in random.sample(QUEST_TEMPLATES,3):
-        c.execute("INSERT INTO daily_quests (user_id,quest_type,quest_target,quest_progress,quest_reward,date,claimed) VALUES (?,?,?,?,0,?,?,0)",
+        c.execute("INSERT INTO daily_quests (user_id,quest_type,quest_target,quest_progress,quest_reward,date,claimed) VALUES (?,?,?,?,0,?,0)",
                   (uid,q["type"],q["target"],q["reward"],today))
     conn.commit();conn.close()
 
-def update_quest_progress(uid,qt,amt):
+def update_quest_progress(uid,qt,amt=1):
     today=date.today().isoformat();conn=sqlite3.connect(DB_PATH);c=conn.cursor()
     c.execute("SELECT quest_id,quest_progress,quest_target FROM daily_quests WHERE user_id=? AND quest_type=? AND date=? AND claimed=0",(uid,qt,today))
     for qid,prog,targ in c.fetchall():
@@ -651,9 +591,7 @@ def cmd_gallery(message):
 @bot.message_handler(func=lambda m:m.text=="🏆 Лидеры")
 def cmd_leaderboard(message):
     conn=sqlite3.connect(DB_PATH);c=conn.cursor()
-    c.execute('''SELECT seals.name,seals.level,players.username FROM seals
-                 JOIN players ON seals.owner_id=players.user_id
-                 ORDER BY seals.level DESC,seals.exp DESC LIMIT 20''')
+    c.execute("SELECT seals.name,seals.level,players.username FROM seals JOIN players ON seals.owner_id=players.user_id ORDER BY seals.level DESC,seals.exp DESC LIMIT 20")
     rows=c.fetchall();conn.close()
     if not rows: bot.send_message(message.from_user.id,"Пусто!");return
     t="🏆 *Лидеры*\n\n";medals=["🥇","🥈","🥉"]
@@ -668,8 +606,7 @@ def cmd_inventory(message):
     uid=message.from_user.id;inv=get_inv(uid)
     if not inv: bot.send_message(uid,"Инвентарь пуст!");return
     t="🎒 *Инвентарь*\n\n"
-    cats={"food":"🍴 Еда","medkit":"💊 Медицина","weapon":"⚔️ Оружие","armor":"🛡️ Броня",
-          "helmet":"🪖 Шлемы","shield":"🛡️ Щиты","accessory":"🎀 Аксессуары","resource":"📦 Ресурсы"}
+    cats={"food":"🍴 Еда","medkit":"💊 Медицина","weapon":"⚔️ Оружие","armor":"🛡️ Броня","helmet":"🪖 Шлемы","shield":"🛡️ Щиты","accessory":"🎀 Аксессуары","resource":"📦 Ресурсы"}
     grouped={}
     for item in inv: grouped.setdefault(item[3],[]).append(item)
     for cat,label in cats.items():
@@ -964,8 +901,7 @@ def work_do(call):
         except: pass
     rw=random.randint(job["reward_min"],job["reward_max"])+seal[9]*3
     eg=int(random.randint(10,25)*get_exp_mult())
-    update_seal(sid,mood=max(0,seal[5]-job["mood_cost"]),satiety=max(0,seal[6]-job["satiety_cost"]),
-                exp=seal[10]+eg,work_cooldown=datetime.now().isoformat(),work_cooldown_min=job["cooldown_min"])
+    update_seal(sid,mood=max(0,seal[5]-job["mood_cost"]),satiety=max(0,seal[6]-job["satiety_cost"]),exp=seal[10]+eg,work_cooldown=datetime.now().isoformat(),work_cooldown_min=job["cooldown_min"])
     add_fishnets(uid,rw);lv=check_levelup(sid)
     log=f"💼 {seal[2]}: {job['name']}\n💰 🐟{rw}\n📈 +{eg}оп\n⏳ кд{job['cooldown_min']}м"
     if lv: log+=f"\n🎉 Ур.{lv}!"
@@ -1113,7 +1049,6 @@ def dng_flee(call):
     uid=call.from_user.id;conn=sqlite3.connect(DB_PATH);c=conn.cursor()
     c.execute("UPDATE dungeon_runs SET active=0 WHERE user_id=?",(uid,));conn.commit();conn.close()
     bot.edit_message_text("🏃 Сбежали.",call.message.chat.id,call.message.message_id)
-
 # ==================== РЫБАЛКА ====================
 @bot.message_handler(commands=['fish'])
 @bot.message_handler(func=lambda m:m.text=="🎣 Рыбалка")
@@ -1578,7 +1513,6 @@ def faction_join(call):
 
 # ==================== ГОЛОСОВАНИЕ ====================
 @bot.message_handler(commands=['vote'])
-@bot.message_handler(func=lambda m:m.text=="🗳 Голосование")
 def cmd_vote(message):
     uid=message.from_user.id;today=date.today().isoformat()
     conn=sqlite3.connect(DB_PATH);c=conn.cursor()
@@ -1666,7 +1600,7 @@ def marry_do(call):
     else: msg+="Нет тюленёнка..."
     bot.edit_message_text(msg,call.message.chat.id,call.message.message_id,parse_mode='Markdown')
 
-# ==================== ЗАДАНИЯ ====================
+# ==================== ЕЖЕДНЕВНЫЕ ЗАДАНИЯ (ОТДЕЛЬНО ОТ ЦЕПОЧЕК) ====================
 @bot.message_handler(commands=['quests'])
 @bot.message_handler(func=lambda m:m.text=="📋 Задания")
 def menu_quests(message):
@@ -1680,7 +1614,7 @@ def menu_quests(message):
     t="📋 *Ежедневные задания*\n\n";m=types.InlineKeyboardMarkup()
     qd={q["type"]:q["desc"] for q in QUEST_TEMPLATES}
     for q in quests:
-        qid,_,qt,qtgt,qprog,qrew,_,cl=q
+        qid=q[0];qt=q[2];qtgt=q[3];qprog=q[4];qrew=q[5];cl=q[7]
         d=qd.get(qt,qt);s=f"{qprog}/{qtgt}"
         if cl: t+=f"  ✅ {d} — {s} (🐟{qrew}) — получено\n"
         elif qprog>=qtgt:
