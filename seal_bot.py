@@ -1095,11 +1095,7 @@ def chest_menu(call):
 def open_chest_do(call):
     uid = call.from_user.id
     chest_name = call.data[10:]
-    m = re.search(r'
-$$
-([A-Z])
-$$
-', chest_name)
+    m = re.search(r'$$([A-Z])$$', chest_name)
     if not m: bot.answer_callback_query(call.id, "Ошибка!"); return
     rarity = m.group(1)
     result = open_chest(uid, rarity)
