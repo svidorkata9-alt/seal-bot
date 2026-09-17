@@ -526,16 +526,22 @@ def get_sell_price(item_name):
     if item_name in SHOP_ITEMS: return int(SHOP_ITEMS[item_name]["price"] * 0.5)
     if item_name in RESOURCE_SELL_PRICES: return RESOURCE_SELL_PRICES[item_name]
     if item_name in POTION_SELL_PRICES: return POTION_SELL_PRICES[item_name]
-m = re.search(r'^([a-z]+)_', item_name)
-if m and m.group(1) in RARITY_SELL_PRICES:
-return RARITY_SELL_PRICES[m.group(1)]
+    m = re.search(r'
+$$
+([A-Z])
+$$
+', item_name)
+    if m and m.group(1) in RARITY_SELL_PRICES:
+        return RARITY_SELL_PRICES[m.group(1)]
     for recipe in CRAFT_RECIPES:
         if recipe["name"] == item_name:
             total = sum(RESOURCE_SELL_PRICES.get(r, 5) * a for r, a in recipe["resources"].items())
             return int(total * 0.6)
     return 5
+
 def exp_for_level(lvl):
     return lvl * 100 + (lvl - 1) * 50
+
 def get_exp_mult():
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     now = datetime.now().isoformat()
@@ -544,6 +550,7 @@ def get_exp_mult():
         try: return float(r[0])
         except ValueError: return 1.0
     return 1.0
+
 def get_shop_disc():
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     now = datetime.now().isoformat()
@@ -818,7 +825,10 @@ def update_quest_chain(uid, step_type, amount=1):
         try: steps = json.loads(chain[0])
         except json.JSONDecodeError: continue
         if cs < len(steps) and steps[cs]["type"] == step_type:
-            ns = sp + 1
+            if step_type in ("reach_level", "dungeon_floor"):
+                ns = max(sp, amount)
+            else:
+                ns = sp + 1
             if ns >= steps[cs]["target"]:
                 ns = 0; cs2 = cs + 1
                 if cs2 >= len(steps): c2.execute("UPDATE player_quest_chains SET completed=1 WHERE id=?", (pc_id,))
@@ -986,7 +996,7 @@ def cmd_profile(message):
     if p[5]: t += f" (репутация: {p[6]})"
     t += "\n"
     clan = get_clan_by_user(uid)
-    if clan: t += f"Клан: {clan[2]} {clan[3]}\n"
+    if clan: t += f"Клан: {clan[1]} {clan[2]}\n"
     ev = get_active_event_text()
     if ev: t += f"\n🎉 Активное событие: {ev}\n"
     seals = get_player_seals(uid)
@@ -1095,7 +1105,11 @@ def chest_menu(call):
 def open_chest_do(call):
     uid = call.from_user.id
     chest_name = call.data[10:]
-    m = re.search(r'$$([A-Z])$$', chest_name)
+    m = re.search(r'
+$$
+([A-Z])
+$$
+', chest_name)
     if not m: bot.answer_callback_query(call.id, "Ошибка!"); return
     rarity = m.group(1)
     result = open_chest(uid, rarity)
@@ -1375,7 +1389,6 @@ def back_to_main(call):
     show_main_menu(call.from_user.id)
     try: bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
     except: pass
-
 # ==================== МАГАЗИН ====================
 @bot.message_handler(commands=['shop'])
 @bot.message_handler(func=lambda m: m.text == "🛒 Магазин")
@@ -1570,6 +1583,7 @@ def work_do(call):
     if enc: log += f"\n\n{enc}"
     update_quest_progress(uid, "work", 1)
     bot.edit_message_text(log, call.message.chat.id, call.message.message_id, parse_mode='Markdown')
+
 # ==================== БОЙ (с поддержкой зелий) ====================
 @bot.message_handler(commands=['battle'])
 @bot.message_handler(func=lambda m: m.text == "⚔️ Бой")
@@ -1588,7 +1602,6 @@ def do_battle(call):
     uid = call.from_user.id; sid = int(call.data.split("_")[1]); seal = get_seal(sid)
     if not seal or seal[3] <= 0: bot.answer_callback_query(call.id, "Не может!"); return
     es, ed, eh = get_effective_stats(sid); skills = get_seal_skills(sid)
-    # Моды от зелий
     ps, pd, pdd, prg, psp, ptn = get_active_potion_mods(sid)
     boss = random.choice(BOSSES); bn = boss["name"]
     bhp = random.randint(60,100) + seal[9]*10; bstr = random.randint(8,15) + seal[9]*2; bdef = random.randint(3,8) + seal[9]
@@ -1603,7 +1616,6 @@ def do_battle(call):
         dmg = max(1, dmg - bdef + random.randint(-3,5)); bhp -= dmg
         log.append(f"Р{rnd}: {seal[2]} →{dmg} (босс {max(0,bhp)}❤️)")
         if bhp <= 0: break
-        # Зелье скорости — доп. атака
         if psp > 0 and bhp > 0 and random.random() < 0.5:
             d2 = max(1, es - bdef + random.randint(-3,5)); bhp -= d2
             log.append(f"💨 Скорость! →{d2}")
@@ -1611,13 +1623,11 @@ def do_battle(call):
         if random.random() < sum(0.10 for s in skills if s["effect"]=="double_strike") and bhp > 0:
             d2 = max(1, es - bdef + random.randint(-3,5)); bhp -= d2; log.append(f"⚔️ Двойной! →{d2}")
         if bhp <= 0: break
-        # Уклонение (зелье + навык)
         dodge_chance = sum(0.10 for s in skills if s["effect"]=="dodge_10") + pdd/100.0
         if random.random() < dodge_chance: log.append("💨 Уклонение!"); continue
         dm = max(1, bstr - ed + random.randint(-2,4))
         if any(s["effect"]=="dmg_reduce_10" for s in skills): dm = int(dm*0.9)
         shp -= dm; log.append(f"{bn} →{dm} ({seal[2]} {max(0,shp)}❤️)")
-        # Регенерация от зелья
         if prg > 0: shp = min(eh, shp + prg)
         ls = sum(1 for s in skills if s["effect"]=="lifesteal_5")
         if ls: heal = int(dm*0.05*ls); shp = min(eh, shp+heal)
@@ -1673,6 +1683,7 @@ def dng_floor(call, sid, fl, mon_idx):
         rarity = config["chest_rarity"]
         chest_name = f"Сундук [{rarity}] 📦"
         add_to_inv(call.from_user.id, chest_name, "chest", 1)
+        update_quest_chain(call.from_user.id, "dungeon_floor", fl)
         if fl >= DUNGEON_TOTAL_FLOORS:
             eg = int((100 + fl * 30) * get_exp_mult())
             s = get_seal(sid); update_seal(sid, exp=s[10]+eg); lv = check_levelup(sid)
@@ -1680,7 +1691,6 @@ def dng_floor(call, sid, fl, mon_idx):
             if lv: t += f"\n🎉 Ур.{lv}!"
             update_quest_progress(call.from_user.id, "dungeon", 1)
             update_quest_chain(call.from_user.id, "dungeon_complete", 1)
-            update_quest_chain(call.from_user.id, "dungeon_floor", fl)
             pl = get_player(call.from_user.id)
             if pl and pl[5] == "explorers": add_faction_rep(call.from_user.id, 3)
             conn = sqlite3.connect(DB_PATH); c = conn.cursor()
@@ -1691,7 +1701,7 @@ def dng_floor(call, sid, fl, mon_idx):
             nf = fl + 1
             t = f"✅ Этаж {fl} пройден!\n🎁 {chest_name}\nОткрыт этаж {nf}!"
             m = types.InlineKeyboardMarkup()
-            m.add(types.InlineKeyboardButton("➡️ Дальше", callback_data=f"dn_{sid}_{nf}"))
+            m.add(types.InlineKeyboardButton("➡️ Дальше", callback_data=f"dn_{sid}_{nf}_0"))
             m.add(types.InlineKeyboardButton("🏃 Выйти", callback_data=f"df_{sid}_{fl}"))
             conn = sqlite3.connect(DB_PATH); c = conn.cursor()
             c.execute("UPDATE dungeon_runs SET current_monster=0 WHERE user_id=?", (call.from_user.id,))
@@ -1901,7 +1911,6 @@ def duel_seal(call):
         od = oes
         if any(s["effect"]=="berserk" for s in osk) and ohp < oeh*0.3: od = int(od*1.5)
         if random.random() < sum(0.15 for s in osk if s["effect"]=="crit_15"): od *= 2; log.append("⚡ Крит в ответ!")
-        # Уклонение
         cdodge = cpdd / 100.0
         if random.random() < cdodge: log.append("💨 Уклонение!"); continue
         od = max(1, od - ced + random.randint(-3,5)); chp -= od
@@ -2078,9 +2087,9 @@ def menu_clan(message):
     uid = message.from_user.id; clan = get_clan_by_user(uid)
     if clan:
         cid = clan[0]; members = get_clan_members(cid); mc = len(members)
-        t = f"🐋 *Клан: {clan[2]} {clan[3]}*\n\nЛидер: @{clan[1]}\nУчастников: {mc}/{MAX_CLAN_MEMBERS}\n\n"
+        t = f"🐋 *Клан: {clan[1]} {clan[2]}*\n\nЛидер: @{clan[3]}\nУчастников: {mc}/{MAX_CLAN_MEMBERS}\n\n"
         m = types.InlineKeyboardMarkup()
-        if clan[1] == uid:
+        if clan[3] == uid:
             m.add(types.InlineKeyboardButton("🏰 Клановое подземелье", callback_data=f"cds_{cid}"))
             m.add(types.InlineKeyboardButton("📋 Участники", callback_data=f"cmem_{cid}"))
         m.add(types.InlineKeyboardButton("🚪 Покинуть", callback_data=f"cleave_{cid}"))
@@ -2140,7 +2149,7 @@ def clan_members(call):
 @bot.callback_query_handler(func=lambda c: c.data.startswith("cds_"))
 def clan_dng_start(call):
     uid = call.from_user.id; cid = int(call.data.split("_")[1]); clan = get_clan_by_user(uid)
-    if not clan or clan[1] != uid: bot.answer_callback_query(call.id, "Только лидер!"); return
+    if not clan or clan[3] != uid: bot.answer_callback_query(call.id, "Только лидер!"); return
     members = get_clan_members(cid); all_seals = []
     for mid in members:
         for s in get_player_seals(mid):
@@ -2427,7 +2436,7 @@ bot.set_my_commands([
     types.BotCommand("shop", "Магазин"), types.BotCommand("craft", "Крафт"),
     types.BotCommand("potion", "Варка зелий"), types.BotCommand("enchant", "Зачарование"),
     types.BotCommand("trade", "Биржа"), types.BotCommand("battle", "Бой с боссом"),
-    types.BotCommand("dungeon", "Подземолье"), types.BotCommand("work", "Работа"),
+    types.BotCommand("dungeon", "Подземелье"), types.BotCommand("work", "Работа"),
     types.BotCommand("duel", "PvP-дуэль"), types.BotCommand("fish", "Рыбалка"),
     types.BotCommand("vote", "Голосование"), types.BotCommand("faction", "Фракции"),
     types.BotCommand("questchain", "Квестовые цепочки"), types.BotCommand("clan", "Клан"),
