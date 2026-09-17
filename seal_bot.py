@@ -1,17 +1,10 @@
 import telebot
 from telebot import types
-import sqlite3
-import random
-import threading
-import time
-import os
-import shutil
-import json
+import sqlite3, random, threading, time, os, shutil, json
 from datetime import datetime, date, timedelta
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 bot = telebot.TeleBot(TOKEN)
-
 DB_PATH = "seal_life.db"
 BACKUP_DIR = "backups"
 MAX_SEALS = 5
@@ -20,11 +13,9 @@ MAX_CLAN_MEMBERS = 20
 CLAN_DUNGEON_MIN_LEVEL = 4
 CLAN_DUNGEON_FLOORS = 10
 
-# ==================== СИСТЕМА МИГРАЦИИ ====================
-
+# ==================== МИГРАЦИИ ====================
 def backup_db():
-    if not os.path.exists(DB_PATH):
-        return None
+    if not os.path.exists(DB_PATH): return None
     os.makedirs(BACKUP_DIR, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     bp = os.path.join(BACKUP_DIR, f"seal_life_{ts}.db")
@@ -39,8 +30,7 @@ def get_db_version(conn):
         c.execute("SELECT value FROM _meta WHERE key='schema_version'")
         r = c.fetchone()
         return int(r[0]) if r else 0
-    except sqlite3.OperationalError:
-        return 0
+    except sqlite3.OperationalError: return 0
 
 def set_db_version(conn, v):
     c = conn.cursor()
@@ -51,8 +41,7 @@ def set_db_version(conn, v):
 def _col(c, t, col, cd):
     c.execute(f"PRAGMA table_info({t})")
     cols = [r[1] for r in c.fetchall()]
-    if col not in cols:
-        c.execute(f"ALTER TABLE {t} ADD COLUMN {col} {cd}")
+    if col not in cols: c.execute(f"ALTER TABLE {t} ADD COLUMN {col} {cd}")
 
 def migration_1(c):
     c.execute('''CREATE TABLE IF NOT EXISTS players (
@@ -142,8 +131,7 @@ def run_migrations():
         conn.close()
         return f"БД актуальна (v{v})"
     for i in range(v, total):
-        try:
-            MIGRATIONS[i](c)
+        try: MIGRATIONS[i](c)
         except Exception as e:
             conn.close()
             raise RuntimeError(f"Миграция {i+1}: {e}")
@@ -155,7 +143,6 @@ def run_migrations():
 print(run_migrations())
 
 # ==================== КОНСТАНТЫ ====================
-
 SHOP_ITEMS = {
     "Апельсин 🍊":{"price":15,"type":"food","satiety":25,"mood":10},
     "Рыба 🐟":{"price":10,"type":"food","satiety":20,"mood":5},
@@ -171,7 +158,6 @@ SHOP_ITEMS = {
     "Жемчужное ожерелье 🫧":{"price":120,"type":"accessory"},"Перо чайки 🪶":{"price":30,"type":"accessory"},
     "Радужный пояс 🌈":{"price":80,"type":"accessory"},
 }
-
 ITEM_BONUSES = {
     "Костяной меч 🗡️":{"str":5},"Акулий клык 🦷":{"str":8},"Трезубец 🔱":{"str":12},"Китовый клинок 🐋":{"str":15},
     "Чешуйчатая броня 🐟":{"def":5,"hp":10},"Панцирь краба 🦀":{"def":8,"hp":15},
@@ -179,13 +165,11 @@ ITEM_BONUSES = {
     "Шлем из ракушек 🐚":{"def":3,"hp":10},"Костяной шлем 💀":{"def":5,"hp":15},"Корона из зубов 👑":{"def":8,"hp":20},
     "Щит из чешуи 🐠":{"def":5},"Панцирный щит 🛡️":{"def":8},"Щит кракена 🦑":{"def":12},
 }
-
 ACCESSORY_BONUSES = {
     "Бантик 🎀":10,"Шарф 🧣":8,"Корона 👑":20,"Очки 🕶️":7,"Цветок 🌸":5,
     "Компас мудреца 🧭":25,"Амулет глубин 🌊":22,"Корона чемпиона 👑":30,
     "Морская звезда ⭐":12,"Жемчужное ожерелье 🫧":18,"Перо чайки 🪶":6,"Радужный пояс 🌈":14,
 }
-
 CRAFT_RECIPES = [
     {"name":"Костяной меч 🗡️","type":"weapon","resources":{"Акулий зуб 🦈":3}},
     {"name":"Акулий клык 🦷","type":"weapon","resources":{"Акулий зуб 🦈":5,"Чешуя 🐟":2}},
@@ -202,12 +186,10 @@ CRAFT_RECIPES = [
     {"name":"Панцирный щит 🛡️","type":"shield","resources":{"Панцирь 🦀":4}},
     {"name":"Щит кракена 🦑","type":"shield","resources":{"Щупальце 🐙":3,"Панцирь 🦀":2}},
 ]
-
 ITEM_TYPES = {}
 for _n,_i in SHOP_ITEMS.items(): ITEM_TYPES[_n]=_i["type"]
 for _r in CRAFT_RECIPES: ITEM_TYPES[_r["name"]]=_r["type"]
-ITEM_TYPES.update({"Меч ⚔️":"weapon","Щит 🛡️":"shield","Шлем 🪖":"helmet","Броня 👕":"armor",
-    "Компас мудреца 🧭":"accessory","Амулет глубин 🌊":"accessory","Корона чемпиона 👑":"accessory"})
+ITEM_TYPES.update({"Компас мудреца 🧭":"accessory","Амулет глубин 🌊":"accessory","Корона чемпиона 👑":"accessory"})
 
 SEAL_SKILLS_POOL = [
     {"name":"Критический удар ⚡","effect":"crit_15","desc":"15% шанс двойного урона"},
@@ -219,7 +201,6 @@ SEAL_SKILLS_POOL = [
     {"name":"Шипы 🌵","effect":"thorns","desc":"Отражает 20% урона"},
     {"name":"Двойной удар ⚔️","effect":"double_strike","desc":"10% шанс атаковать дважды"},
 ]
-
 DUNGEON_MONSTERS = [
     {"name":"Фугу 🐡","hp":30,"str":8,"def":3,"drops":{"Жало 🐡":0.7}},
     {"name":"Креветка-ниндзя 🦐","hp":35,"str":9,"def":8,"drops":{"Панцирь 🦀":0.5,"Чешуя 🐟":0.3}},
@@ -233,7 +214,6 @@ DUNGEON_MONSTERS = [
     {"name":"Морской дьявол 😈","hp":90,"str":16,"def":9,"drops":{"Жемчуг 🫧":0.3,"Чешуя 🐟":0.4}},
     {"name":"Глубинный краб 🦀","hp":70,"str":13,"def":14,"drops":{"Панцирь 🦀":0.7,"Жемчуг 🫧":0.1}},
 ]
-
 BOSSES = [
     {"name":"Краб-босс 🦀","drops":{"Панцирь 🦀":0.8}},{"name":"Акула 🦈","drops":{"Акулий зуб 🦈":0.8}},
     {"name":"Осьминог 🐙","drops":{"Щупальце 🐙":0.8}},{"name":"Морской ёжик 🦔","drops":{"Жало 🐡":0.8}},
@@ -243,7 +223,6 @@ BOSSES = [
     {"name":"Глубинный монстр 🌑","drops":{"Жемчуг 🫧":0.4,"Щупальце 🐙":0.5}},
     {"name":"Король креветок 🦐","drops":{"Панцирь 🦀":0.7,"Чешуя 🐟":0.3}},
 ]
-
 CLAN_DUNGEON_MONSTERS = [
     {"name":"Страж глубин 🌊","hp":200,"str":25,"def":15},{"name":"Древний краб 🦀","hp":250,"str":30,"def":20},
     {"name":"Призрачная акула 👻","hp":300,"str":35,"def":18},{"name":"Ледяной кальмар 🧊","hp":350,"str":40,"def":25},
@@ -251,7 +230,6 @@ CLAN_DUNGEON_MONSTERS = [
     {"name":"Бездонный левиафан 🐋","hp":600,"str":60,"def":35},{"name":"Крашеный кракен 🦑","hp":700,"str":70,"def":40},
     {"name":"Древний бог морей 🔱","hp":800,"str":80,"def":45},{"name":"Повелитель бездны 🌑","hp":1000,"str":100,"def":60},
 ]
-
 JOBS = [
     {"name":"Рыболов 🎣","desc":"Ловить рыбу","reward_min":20,"reward_max":50,"cooldown_min":30,"mood_cost":5,"satiety_cost":10},
     {"name":"Почтальон 📬","desc":"Разносить почту","reward_min":30,"reward_max":60,"cooldown_min":45,"mood_cost":8,"satiety_cost":15},
@@ -259,58 +237,56 @@ JOBS = [
     {"name":"Водолаз 🤿","desc":"Исследовать глубины","reward_min":40,"reward_max":80,"cooldown_min":50,"mood_cost":10,"satiety_cost":18},
     {"name":"Актёр 🎭","desc":"Выступать в шоу","reward_min":35,"reward_max":70,"cooldown_min":40,"mood_cost":6,"satiety_cost":12},
 ]
-
 PLAY_COOLDOWN_MIN = 15
 FISH_TYPES = [
     {"name":"Малёк 🐤","reward":(3,8),"correct":"Подсечь!"},{"name":"Окунь 🐟","reward":(8,15),"correct":"Подсечь!"},
     {"name":"Сёмга 🐠","reward":(15,25),"correct":"Ждать"},{"name":"Золотая рыбка ✨","reward":(30,50),"correct":"Ждать"},
     {"name":"Краб 🦀","reward":(10,20),"correct":"Отпустить"},
 ]
-
 DAILY_EVENTS = [
     {"event_type":"exp_boost","effect":"1.5","desc":"+50% к опыту!"},
     {"event_type":"shop_discount","effect":"0.2","desc":"Скидки 20% в магазине!"},
     {"event_type":"fishing_bonus","effect":"2.0","desc":"x2 рыбнеток за рыбалку!"},
 ]
-
 FACTIONS = {
     "hunters":{"name":"Стая охотников 🎯","desc":"Бонус за бои"},
     "fashion":{"name":"Клуб модников 💅","desc":"Бонус к настроению"},
     "explorers":{"name":"Гильдия исследователей 🧭","desc":"Бонус к опыту"},
 }
-
 RANDOM_ENCOUNTERS = [
     {"name":"Сундук на берегу! 📦","type":"item","chance":0.12,"items":["Чешуя 🐟","Панцирь 🦀","Акулий зуб 🦈","Жемчуг 🫧"]},
     {"name":"Злой краб! 🦀","type":"battle","chance":0.10,"mood_cost":10,"satiety_cost":10,"drop":{"Панцирь 🦀":0.5}},
     {"name":"Дружелюбный дельфин 🐬","type":"hint","chance":0.08,"fishnet_reward":(10,30)},
     {"name":"Затонувший корабль 🚢","type":"fishnets","chance":0.06,"fishnet_reward":(30,80)},
 ]
-
 QUEST_TEMPLATES = [
     {"type":"play","target":3,"reward":30,"desc":"Поиграть 3 раза"},{"type":"feed","target":3,"reward":30,"desc":"Покормить 3 раза"},
     {"type":"battle","target":1,"reward":40,"desc":"Победить 1 босса"},{"type":"dungeon","target":1,"reward":50,"desc":"Пройти 1 подземелье"},
     {"type":"shop","target":1,"reward":20,"desc":"Купить 1 предмет"},{"type":"work","target":1,"reward":35,"desc":"Отправить на работу"},
     {"type":"craft","target":1,"reward":25,"desc":"Скрафтить 1 предмет"},{"type":"fish","target":1,"reward":25,"desc":"Поймать 1 рыбу"},
 ]
-
 CLAN_EMOJIS = ["🦭","🐋","🦈","🐙","🦀","🦐","🦑","🐬","🐳","🐢"]
 
 # ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 # seals: 0=id,1=owner,2=name,3=hp,4=max_hp,5=mood,6=satiety,7=str,8=def,9=lvl,10=exp,
-# 11=baby,12=born,13=wep,14=arm,15=helm,16=shield,17=acc,18=work_cd,19=play_cd,20=photo,21=work_cd_min
+#   11=baby,12=born,13=wep,14=arm,15=helm,16=shield,17=acc,18=work_cd,19=play_cd,20=photo,21=work_cd_min
 # players: 0=uid,1=username,2=display,3=photo,4=fishnets,5=faction,6=rep,7=fish_cd
 
 def get_player(uid):
-    conn=sqlite3.connect(DB_PATH);c=conn.cursor();c.execute("SELECT * FROM players WHERE user_id=?",(uid,));r=c.fetchone();conn.close();return r
+    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
+    c.execute("SELECT * FROM players WHERE user_id=?",(uid,));r=c.fetchone();conn.close();return r
 
 def get_seal(sid):
-    conn=sqlite3.connect(DB_PATH);c=conn.cursor();c.execute("SELECT * FROM seals WHERE seal_id=?",(sid,));r=c.fetchone();conn.close();return r
+    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
+    c.execute("SELECT * FROM seals WHERE seal_id=?",(sid,));r=c.fetchone();conn.close();return r
 
 def get_player_seals(uid):
-    conn=sqlite3.connect(DB_PATH);c=conn.cursor();c.execute("SELECT * FROM seals WHERE owner_id=?",(uid,));r=c.fetchall();conn.close();return r
+    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
+    c.execute("SELECT * FROM seals WHERE owner_id=?",(uid,));r=c.fetchall();conn.close();return r
 
 def get_seal_count(uid):
-    conn=sqlite3.connect(DB_PATH);c=conn.cursor();c.execute("SELECT COUNT(*) FROM seals WHERE owner_id=?",(uid,));r=c.fetchone();conn.close();return r[0] if r else 0
+    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
+    c.execute("SELECT COUNT(*) FROM seals WHERE owner_id=?",(uid,));r=c.fetchone();conn.close();return r[0] if r else 0
 
 def update_seal(sid, **kw):
     conn=sqlite3.connect(DB_PATH);c=conn.cursor()
@@ -323,10 +299,12 @@ def update_player(uid, **kw):
     c.execute(f"UPDATE players SET {s} WHERE user_id=?",v);conn.commit();conn.close()
 
 def add_fishnets(uid,amt):
-    conn=sqlite3.connect(DB_PATH);c=conn.cursor();c.execute("UPDATE players SET fishnets=fishnets+? WHERE user_id=?",(amt,uid));conn.commit();conn.close()
+    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
+    c.execute("UPDATE players SET fishnets=fishnets+? WHERE user_id=?",(amt,uid));conn.commit();conn.close()
 
 def get_fishnets(uid):
-    conn=sqlite3.connect(DB_PATH);c=conn.cursor();c.execute("SELECT fishnets FROM players WHERE user_id=?",(uid,));r=c.fetchone();conn.close();return r[0] if r else 0
+    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
+    c.execute("SELECT fishnets FROM players WHERE user_id=?",(uid,));r=c.fetchone();conn.close();return r[0] if r else 0
 
 def add_to_inv(uid,name,t,q=1):
     conn=sqlite3.connect(DB_PATH);c=conn.cursor()
@@ -336,10 +314,12 @@ def add_to_inv(uid,name,t,q=1):
     conn.commit();conn.close()
 
 def get_inv(uid):
-    conn=sqlite3.connect(DB_PATH);c=conn.cursor();c.execute("SELECT * FROM inventory WHERE user_id=? AND quantity>0",(uid,));r=c.fetchall();conn.close();return r
+    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
+    c.execute("SELECT * FROM inventory WHERE user_id=? AND quantity>0",(uid,));r=c.fetchall();conn.close();return r
 
 def get_item_qty(uid,name):
-    conn=sqlite3.connect(DB_PATH);c=conn.cursor();c.execute("SELECT quantity FROM inventory WHERE user_id=? AND item_name=?",(uid,name));r=c.fetchone();conn.close();return r[0] if r else 0
+    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
+    c.execute("SELECT quantity FROM inventory WHERE user_id=? AND item_name=?",(uid,name));r=c.fetchone();conn.close();return r[0] if r else 0
 
 def remove_from_inv(uid,name,q=1):
     conn=sqlite3.connect(DB_PATH);c=conn.cursor()
@@ -355,18 +335,26 @@ def exp_for_level(lvl): return lvl*100+(lvl-1)*50
 
 def get_exp_mult():
     conn=sqlite3.connect(DB_PATH);c=conn.cursor()
-    c.execute("SELECT effect FROM active_events WHERE active=1 AND event_type='exp_boost' AND expires_at>?",(datetime.now().isoformat(),));r=c.fetchone();conn.close()
-    return float(r[0]) if r else 1.0
+    c.execute("SELECT effect FROM active_events WHERE active=1 AND event_type='exp_boost' AND expires_at>?",(datetime.now().isoformat(),))
+    r=c.fetchone();conn.close();return float(r[0]) if r else 1.0
 
 def get_shop_disc():
     conn=sqlite3.connect(DB_PATH);c=conn.cursor()
-    c.execute("SELECT effect FROM active_events WHERE active=1 AND event_type='shop_discount' AND expires_at>?",(datetime.now().isoformat(),));r=c.fetchone();conn.close()
-    return float(r[0]) if r else 0.0
+    c.execute("SELECT effect FROM active_events WHERE active=1 AND event_type='shop_discount' AND expires_at>?",(datetime.now().isoformat(),))
+    r=c.fetchone();conn.close();return float(r[0]) if r else 0.0
 
 def get_fish_bonus():
     conn=sqlite3.connect(DB_PATH);c=conn.cursor()
-    c.execute("SELECT effect FROM active_events WHERE active=1 AND event_type='fishing_bonus' AND expires_at>?",(datetime.now().isoformat(),));r=c.fetchone();conn.close()
-    return float(r[0]) if r else 1.0
+    c.execute("SELECT effect FROM active_events WHERE active=1 AND event_type='fishing_bonus' AND expires_at>?",(datetime.now().isoformat(),))
+    r=c.fetchone();conn.close();return float(r[0]) if r else 1.0
+
+def get_seal_skills(sid):
+    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
+    c.execute("SELECT skill_name,skill_effect FROM seal_skills WHERE seal_id=?",(sid,));r=c.fetchall();conn.close()
+    return [{"name":row[0],"effect":row[1]} for row in r]
+
+def uid_owner(sid):
+    seal=get_seal(sid);return seal[1] if seal else 0
 
 def check_levelup(sid):
     results=[]
@@ -377,27 +365,19 @@ def check_levelup(sid):
         if exp>=needed:
             nl=lvl+1;ne=exp-needed
             update_seal(sid,level=nl,exp=ne,strength=seal[7]+random.randint(2,5),
-                       defense=seal[8]+random.randint(1,3),max_health=seal[4]+random.randint(10,20),health=seal[4]+random.randint(10,20))
+                       defense=seal[8]+random.randint(1,3),
+                       max_health=seal[4]+random.randint(10,20),
+                       health=seal[4]+random.randint(10,20))
             results.append(nl)
-            # Навык каждые 5 уровней
             if nl%5==0:
                 skill=random.choice(SEAL_SKILLS_POOL)
                 conn=sqlite3.connect(DB_PATH);c=conn.cursor()
                 c.execute("INSERT INTO seal_skills (seal_id,skill_name,skill_effect,acquired_at) VALUES (?,?,?,?)",
                           (sid,skill["name"],skill["effect"],datetime.now().isoformat()))
                 conn.commit();conn.close()
-            update_quest_chain(uid_owner(sid),"reach_level",nl)
+            uid=uid_owner(sid);update_quest_chain(uid,"reach_level",nl)
         else: break
     return results[-1] if results else False
-
-def uid_owner(sid):
-    seal=get_seal(sid)
-    return seal[1] if seal else 0
-
-def get_seal_skills(sid):
-    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
-    c.execute("SELECT skill_name,skill_effect FROM seal_skills WHERE seal_id=?",(sid,));r=c.fetchall();conn.close()
-    return [{"name":row[0],"effect":row[1]} for row in r]
 
 def get_effective_stats(sid):
     seal=get_seal(sid)
@@ -409,8 +389,7 @@ def get_effective_stats(sid):
     return bs+sb,bd+db,bh+hb
 
 def get_mood_bonus(sid):
-    seal=get_seal(sid)
-    return ACCESSORY_BONUSES.get(seal[17],0) if seal else 0
+    seal=get_seal(sid);return ACCESSORY_BONUSES.get(seal[17],0) if seal else 0
 
 def can_craft(uid,recipe):
     return all(get_item_qty(uid,r)>=a for r,a in recipe["resources"].items())
@@ -461,7 +440,8 @@ def get_seal_status(seal,married):
 
 def get_active_event_text():
     conn=sqlite3.connect(DB_PATH);c=conn.cursor()
-    c.execute("SELECT event_type FROM active_events WHERE active=1 AND expires_at>?",(datetime.now().isoformat(),));r=c.fetchone();conn.close()
+    c.execute("SELECT event_type FROM active_events WHERE active=1 AND expires_at>?",(datetime.now().isoformat(),))
+    r=c.fetchone();conn.close()
     if not r: return None
     for ev in DAILY_EVENTS:
         if ev["event_type"]==r[0]: return ev["desc"]
@@ -485,11 +465,9 @@ def activate_event(et,eff):
     c.execute("INSERT INTO active_events (event_type,effect,expires_at,active) VALUES (?,?,?,1)",(et,eff,exp.isoformat()))
     conn.commit();conn.close()
 
-# --- Квестовые цепочки ---
 def get_quest_chains():
     conn=sqlite3.connect(DB_PATH);c=conn.cursor()
-    c.execute("SELECT * FROM quest_chains");r=c.fetchall();conn.close()
-    return r
+    c.execute("SELECT * FROM quest_chains");r=c.fetchall();conn.close();return r
 
 def get_player_chain(uid,chain_id):
     conn=sqlite3.connect(DB_PATH);c=conn.cursor()
@@ -516,20 +494,15 @@ def update_quest_chain(uid,step_type,amount=1):
                 c2.execute("UPDATE player_quest_chains SET step_progress=? WHERE id=?",(ns,pc_id))
     conn.commit();conn.close()
 
-# --- Кланы ---
 def get_clan_by_user(uid):
     conn=sqlite3.connect(DB_PATH);c=conn.cursor()
-    c.execute("SELECT clans.* FROM clans JOIN clan_members ON clans.clan_id=clan_members.clan_id WHERE clan_members.user_id=?",(uid,));r=c.fetchone();conn.close();return r
+    c.execute("SELECT clans.* FROM clans JOIN clan_members ON clans.clan_id=clan_members.clan_id WHERE clan_members.user_id=?",(uid,))
+    r=c.fetchone();conn.close();return r
 
 def get_clan_members(cid):
     conn=sqlite3.connect(DB_PATH);c=conn.cursor()
     c.execute("SELECT user_id FROM clan_members WHERE clan_id=?",(cid,));r=c.fetchall();conn.close();return [row[0] for row in r]
 
-def get_clan_member_count(cid):
-    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
-    c.execute("SELECT COUNT(*) FROM clan_members WHERE clan_id=?",(cid,));r=c.fetchone();conn.close();return r[0] if r else 0
-
-# --- Случайные события ---
 def trigger_encounter(uid):
     enc=random.choice(RANDOM_ENCOUNTERS)
     if random.random()>enc["chance"]: return None
@@ -547,10 +520,9 @@ def trigger_encounter(uid):
                 d=process_drops(uid,enc["drop"])
                 if d: msg+=f"\nНо добыча: {', '.join(d)}"
     elif enc["type"]=="hint":
-        r=random.randint(*enc["fishnet_reward"]);add_fishnets(uid,r);msg+=f"Дельчик подсказал секрет! 🐟{r}"
+        r=random.randint(*enc["fishnet_reward"]);add_fishnets(uid,r);msg+=f"Дельфин подсказал секрет! 🐟{r}"
     return msg
 
-# --- Дуэли ---
 def create_duel(cid,oid,csid):
     conn=sqlite3.connect(DB_PATH);c=conn.cursor()
     c.execute("INSERT INTO duels (challenger_id,opponent_id,challenger_seal_id,status,created_at) VALUES (?,?,?,'pending',?)",
@@ -561,7 +533,6 @@ def get_duel(did):
     conn=sqlite3.connect(DB_PATH);c=conn.cursor()
     c.execute("SELECT * FROM duels WHERE duel_id=?",(did,));r=c.fetchone();conn.close();return r
 
-# --- Ежедневные задания ---
 def generate_daily_quests(uid):
     today=date.today().isoformat();conn=sqlite3.connect(DB_PATH);c=conn.cursor()
     c.execute("SELECT * FROM daily_quests WHERE user_id=? AND date=?",(uid,today))
@@ -629,7 +600,6 @@ def show_main_menu(uid):
     bot.send_message(uid,"Выберите действие:",reply_markup=m)
 
 # ==================== ПРОФИЛЬ ====================
-
 @bot.message_handler(commands=['profile'])
 @bot.message_handler(func=lambda m:m.text=="👤 Профиль")
 def cmd_profile(message):
@@ -637,16 +607,32 @@ def cmd_profile(message):
     if not p: bot.send_message(uid,"Напишите /start");return
     cnt=get_seal_count(uid);fn=p[4]
     fn2=FACTIONS[p[5]]["name"] if p[5] and p[5] in FACTIONS else "Нет"
-    t=f"👤 *Профиль*\n\nТюленей: {cnt}/{MAX_SEALS}\nРыбнетки: 🐟 {fn}\nФракция: {fn2}"
-    if p[5]: t+=f" (реп:{p[6]})"
+    t=f"👤 *Ваш профиль*\n\n"
+    t+=f"Тюленей: {cnt}/{MAX_SEALS}\n"
+    t+=f"Рыбнетки: 🐟 {fn}\n"
+    t+=f"Фракция: {fn2}"
+    if p[5]: t+=f" (репутация: {p[6]})"
+    t+="\n"
     clan=get_clan_by_user(uid)
-    if clan: t+=f"\nКлан: {clan[2]} {clan[3]}"
+    if clan: t+=f"Клан: {clan[2]} {clan[3]}\n"
     ev=get_active_event_text()
-    if ev: t+=f"\n\n🎉 {ev}"
+    if ev: t+=f"\n🎉 Активное событие: {ev}\n"
+    seals=get_player_seals(uid)
+    if seals:
+        t+="\n*Ваши тюлени:*\n"
+        for s in seals:
+            es,ed,eh=get_effective_stats(s[0])
+            skills=get_seal_skills(s[0])
+            t+=f"\n🦭 *{s[2]}* (ур.{s[9]})\n"
+            t+=f"  ❤️ Здоровье: {s[3]}/{s[4]} (с экип: {eh})\n"
+            t+=f"  💪 Сила: {s[7]} (с экип: {es})\n"
+            t+=f"  🛡️ Защита: {s[8]} (с экип: {ed})\n"
+            t+=f"  😊 Настроение: {s[5]}\n"
+            t+=f"  🍖 Сытость: {s[6]}\n"
+            if skills: t+=f"  ✨ Навыки: {', '.join(sk['name'] for sk in skills)}\n"
     bot.send_message(uid,t,parse_mode='Markdown')
 
 # ==================== ГАЛЕРЕЯ ====================
-
 @bot.message_handler(commands=['gallery'])
 def cmd_gallery(message):
     uid=message.from_user.id;seals=get_player_seals(uid)
@@ -661,7 +647,6 @@ def cmd_gallery(message):
     bot.send_message(uid,t,parse_mode='Markdown')
 
 # ==================== ЛИДЕРЫ ====================
-
 @bot.message_handler(commands=['leaderboard'])
 @bot.message_handler(func=lambda m:m.text=="🏆 Лидеры")
 def cmd_leaderboard(message):
@@ -677,7 +662,6 @@ def cmd_leaderboard(message):
     bot.send_message(message.from_user.id,t,parse_mode='Markdown')
 
 # ==================== ИНВЕНТАРЬ ====================
-
 @bot.message_handler(commands=['inventory'])
 @bot.message_handler(func=lambda m:m.text=="🎒 Инвентарь")
 def cmd_inventory(message):
@@ -687,9 +671,7 @@ def cmd_inventory(message):
     cats={"food":"🍴 Еда","medkit":"💊 Медицина","weapon":"⚔️ Оружие","armor":"🛡️ Броня",
           "helmet":"🪖 Шлемы","shield":"🛡️ Щиты","accessory":"🎀 Аксессуары","resource":"📦 Ресурсы"}
     grouped={}
-    for item in inv:
-        it=item[3]
-        grouped.setdefault(it,[]).append(item)
+    for item in inv: grouped.setdefault(item[3],[]).append(item)
     for cat,label in cats.items():
         items=grouped.get(cat,[])
         if items:
@@ -699,7 +681,6 @@ def cmd_inventory(message):
     bot.send_message(uid,t,parse_mode='Markdown')
 
 # ==================== ФОТО ====================
-
 @bot.message_handler(commands=['setphoto'])
 def cmd_setphoto(message):
     uid=message.from_user.id;seals=get_player_seals(uid)
@@ -725,7 +706,6 @@ def proc_seal_photo(message,sid):
     except Exception as e: bot.send_message(uid,f"❌ {e}")
 
 # ==================== ТЮЛЕНЬ ====================
-
 @bot.message_handler(func=lambda m:m.text=="🦭 Мой тюлень")
 def menu_seal(message):
     uid=message.from_user.id;seals=get_player_seals(uid)
@@ -829,7 +809,6 @@ def seal_play(call):
     if p and p[5]=="fashion": add_faction_rep(uid,1)
     msg=f"🎾 Поиграли! +25😊 +{eg}оп"
     if lv: msg+=f"\n🎉 Ур.{lv}!"
-    # Случайное событие
     enc=trigger_encounter(uid)
     if enc: msg+=f"\n\n{enc}"
     bot.answer_callback_query(call.id,msg);seal_selected(call,sid)
@@ -881,7 +860,6 @@ def back_to_main(call):
     except: pass
 
 # ==================== МАГАЗИН ====================
-
 @bot.message_handler(commands=['shop'])
 @bot.message_handler(func=lambda m:m.text=="🛒 Магазин")
 def menu_shop(message):
@@ -909,7 +887,6 @@ def shop_buy(call):
     bot.answer_callback_query(call.id,f"Куплено: {name} за 🐟{pr}!")
 
 # ==================== КРАФТ ====================
-
 @bot.message_handler(commands=['craft'])
 @bot.message_handler(func=lambda m:m.text=="🔨 Крафт")
 def menu_craft(message):
@@ -940,7 +917,6 @@ def craft_do(call):
     bot.answer_callback_query(call.id,f"Скрафчено: {name}!")
 
 # ==================== РАБОТА ====================
-
 @bot.message_handler(commands=['work'])
 @bot.message_handler(func=lambda m:m.text=="💼 Работа")
 def menu_work(message):
@@ -999,7 +975,6 @@ def work_do(call):
     bot.edit_message_text(log,call.message.chat.id,call.message.message_id,parse_mode='Markdown')
 
 # ==================== БОИ ====================
-
 @bot.message_handler(commands=['battle'])
 @bot.message_handler(func=lambda m:m.text=="⚔️ Бой")
 def menu_battle(message):
@@ -1023,27 +998,22 @@ def do_battle(call):
     shp=seal[3]
     for rnd in range(1,21):
         if shp<=0 or bhp<=0: break
-        # Навыки
         dmg=es
         if any(s["effect"]=="berserk" for s in skills) and shp<eh*0.3: dmg=int(dmg*1.5)
         if random.random()<sum(0.15 for s in skills if s["effect"]=="crit_15"): dmg*=2;log.append("⚡ Крит!")
         dmg=max(1,dmg-bdef+random.randint(-3,5));bhp-=dmg
         log.append(f"Р{rnd}: {seal[2]} →{dmg} (босс {max(0,bhp)}❤️)")
         if bhp<=0: break
-        # Двойной удар
         if random.random()<sum(0.10 for s in skills if s["effect"]=="double_strike") and bhp>0:
             d2=max(1,es-bdef+random.randint(-3,5));bhp-=d2;log.append(f"⚔️ Двойной! →{d2}")
         if bhp<=0: break
-        # Уклонение
         if random.random()<sum(0.10 for s in skills if s["effect"]=="dodge_10"):
             log.append("💨 Уклонение!");continue
         dm=max(1,bstr-ed+random.randint(-2,4))
         if any(s["effect"]=="dmg_reduce_10" for s in skills): dm=int(dm*0.9)
         shp-=dm;log.append(f"{bn} →{dm} ({seal[2]} {max(0,shp)}❤️)")
-        # Вампиризм
         ls=sum(1 for s in skills if s["effect"]=="lifesteal_5")
         if ls: heal=int(dm*0.05*ls);shp=min(eh,shp+heal)
-        # Шипы
         if any(s["effect"]=="thorns" for s in skills): bhp-=int(dm*0.2)
     if bhp<=0:
         rw=random.randint(20,50)+seal[9]*5;eg=int(random.randint(20,40)*get_exp_mult())
@@ -1063,7 +1033,6 @@ def do_battle(call):
     bot.edit_message_text("\n".join(log),call.message.chat.id,call.message.message_id,parse_mode='Markdown')
 
 # ==================== ПОДЗЕМЕЛЬЕ ====================
-
 @bot.message_handler(commands=['dungeon'])
 @bot.message_handler(func=lambda m:m.text=="🏰 Подземелье")
 def menu_dungeon(message):
@@ -1146,7 +1115,6 @@ def dng_flee(call):
     bot.edit_message_text("🏃 Сбежали.",call.message.chat.id,call.message.message_id)
 
 # ==================== РЫБАЛКА ====================
-
 @bot.message_handler(commands=['fish'])
 @bot.message_handler(func=lambda m:m.text=="🎣 Рыбалка")
 def cmd_fish(message):
@@ -1177,7 +1145,7 @@ def fish_cb(call):
     uid=call.from_user.id;p=call.data.split("_",2);act,fn=p[1],p[2]
     fish=next((f for f in FISH_TYPES if f["name"]==fn),None)
     if not fish: bot.answer_callback_query(call.id,"Истекла!");return
-    bonus=get_fishing_bonus();rm,rx=int(fish["reward"][0]*bonus),int(fish["reward"][1]*bonus)
+    bonus=get_fish_bonus();rm,rx=int(fish["reward"][0]*bonus),int(fish["reward"][1]*bonus)
     if act==fish["correct"]:
         rw=random.randint(rm,rx);add_fishnets(uid,rw)
         bot.edit_message_text(f"🎣 *Поймано!*\n\n{fn}!\n🐟{rw}",call.message.chat.id,call.message.message_id,parse_mode='Markdown')
@@ -1186,8 +1154,7 @@ def fish_cb(call):
         bot.edit_message_text(f"💨 {fn} сорвался!\nНужно: {fish['correct']}",call.message.chat.id,call.message.message_id,parse_mode='Markdown')
     update_player(uid,fish_cooldown=datetime.now().isoformat())
 
-# ==================== ДУЭЛИ (PvP) ====================
-
+# ==================== ДУЭЛИ ====================
 @bot.message_handler(commands=['duel'])
 @bot.message_handler(func=lambda m:m.text=="🤺 Дуэль")
 def cmd_duel(message):
@@ -1198,7 +1165,7 @@ def cmd_duel(message):
         if s[11]==1: continue
         m.add(types.InlineKeyboardButton(f"{s[2]} (ур.{s[9]})",callback_data=f"dusel_{s[0]}"))
     if not m.keyboard: bot.send_message(uid,"Все малыши!");return
-    bot.send_message(uid,"🤺 Выберите тюленя для дуэли:",reply_markup=m)
+    bot.send_message(uid,"🤺 Выберите тюленя:",reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c:c.data.startswith("dusel_"))
 def duel_sel(call):
@@ -1217,19 +1184,13 @@ def duel_target(message,sid):
         try: oid=int(txt)
         except: bot.send_message(uid,"Неверный формат!");return
     if oid==uid: bot.send_message(uid,"Нельзя с собой!");return
-    seal=get_seal(sid)
-    did=create_duel(uid,oid,sid)
-    m=types.InlineKeyboardMarkup()
-    m.add(types.InlineKeyboardButton("⚔️ Принять",callback_data=f"duac_{did}"),
-          types.InlineKeyboardButton("❌ Отказать",callback_data=f"durj_{did}"))
-    bot.send_message(uid,f"🤺 Вызов отправлен! Ожидайте ответа.")
+    seal=get_seal(sid);did=create_duel(uid,oid,sid)
+    bot.send_message(uid,"🤺 Вызов отправлен! Ожидайте ответа.")
     try:
-        seals=get_player_seals(oid)
-        if seals:
-            m2=types.InlineKeyboardMarkup()
-            m2.add(types.InlineKeyboardButton("⚔️ Принять",callback_data=f"duac_{did}"),
-                   types.InlineKeyboardButton("❌ Отказать",callback_data=f"durj_{did}"))
-            bot.send_message(oid,f"🤺 Вас вызвал на дуэль @{message.from_user.username}!\nТюлень: {seal[2]} (ур.{seal[9]})",reply_markup=m2)
+        m2=types.InlineKeyboardMarkup()
+        m2.add(types.InlineKeyboardButton("⚔️ Принять",callback_data=f"duac_{did}"),
+               types.InlineKeyboardButton("❌ Отказать",callback_data=f"durj_{did}"))
+        bot.send_message(oid,f"🤺 Вас вызвал на дуэль @{message.from_user.username}!\nТюлень: {seal[2]} (ур.{seal[9]})",reply_markup=m2)
     except: pass
 
 @bot.callback_query_handler(func=lambda c:c.data.startswith("duac_"))
@@ -1243,7 +1204,7 @@ def duel_accept(call):
     for s in seals:
         if s[11]==1: continue
         m.add(types.InlineKeyboardButton(f"{s[2]} (ур.{s[9]})",callback_data=f"duseal_{did}_{s[0]}"))
-    bot.edit_message_text("Выберите тюленя для дуэли:",call.message.chat.id,call.message.message_id,reply_markup=m)
+    bot.edit_message_text("Выберите тюленя:",call.message.chat.id,call.message.message_id,reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c:c.data.startswith("duseal_"))
 def duel_seal(call):
@@ -1253,27 +1214,23 @@ def duel_seal(call):
     conn=sqlite3.connect(DB_PATH);c=conn.cursor()
     c.execute("UPDATE duels SET status='active',opponent_seal_id=? WHERE duel_id=?",(osid,did))
     conn.commit();conn.close()
-    # Симуляция боя
     csid=duel[3];cseal=get_seal(csid);oseal=get_seal(osid)
     if not cseal or not oseal: bot.answer_callback_query(call.id,"Тюлень не найден!");return
     ces,ced,ceh=get_effective_stats(csid);oes,oed,oeh=get_effective_stats(osid)
     csk=get_seal_skills(csid);osk=get_seal_skills(osid)
     chp=cseal[3];ohp=oseal[3]
     log=[f"🤺 *Дуэль: {cseal[2]} vs {oseal[2]}*\n",
-         f"{cseal[2]}: ❤️{ceh} 💪{ces} 🛡️{ced}",
-         f"{oseal[2]}: ❤️{oeh} 💪{oes} 🛡️{oed}\n"]
-    rnd=0
+         f"{cseal[2]}: ❤️{ceh} 💪{ces} 🛡️{ced}",f"{oseal[2]}: ❤️{oeh} 💪{oes} 🛡️{oed}\n"]
+    rnd=0;rw=0
     while chp>0 and ohp>0:
         rnd+=1
         if rnd>15: break
-        # Атака challenger
         cd=ces
         if any(s["effect"]=="berserk" for s in csk) and chp<ceh*0.3: cd=int(cd*1.5)
         if random.random()<sum(0.15 for s in csk if s["effect"]=="crit_15"): cd*=2;log.append("⚡ Крит!")
         cd=max(1,cd-oed+random.randint(-3,5));ohp-=cd
         log.append(f"Р{rnd}: {cseal[2]} →{cd} ({oseal[2]} {max(0,ohp)}❤️)")
         if ohp<=0: break
-        # Атака opponent
         od=oes
         if any(s["effect"]=="berserk" for s in osk) and ohp<oeh*0.3: od=int(od*1.5)
         if random.random()<sum(0.15 for s in osk if s["effect"]=="crit_15"): od*=2;log.append("⚡ Крит в ответ!")
@@ -1292,7 +1249,7 @@ def duel_seal(call):
         update_quest_chain(duel[2],"duel_win",1)
     else: log.append("\n🤝 Ничья!")
     conn=sqlite3.connect(DB_PATH);c=conn.cursor()
-    c.execute("UPDATE duels SET status='completed',winner_id=?,reward=? WHERE duel_id=?",(winner_id,rw if ohp<=0 or chp<=0 else 0,did))
+    c.execute("UPDATE duels SET status='completed',winner_id=?,reward=? WHERE duel_id=?",(winner_id,rw,did))
     conn.commit();conn.close()
     bot.edit_message_text("\n".join(log),call.message.chat.id,call.message.message_id,parse_mode='Markdown')
     try: bot.send_message(duel[1] if duel[1]!=uid else duel[2],"\n".join(log),parse_mode='Markdown')
@@ -1309,18 +1266,15 @@ def duel_reject(call):
     except: pass
 
 # ==================== КВЕСТОВЫЕ ЦЕПОЧКИ ====================
-
 @bot.message_handler(commands=['questchain'])
 @bot.message_handler(func=lambda m:m.text=="📚 Цепочки")
 def cmd_questchain(message):
     uid=message.from_user.id;chains=get_quest_chains()
-    t="📚 *Квестовые цепочки*\n\n"
-    m=types.InlineKeyboardMarkup()
+    t="📚 *Квестовые цепочки*\n\n";m=types.InlineKeyboardMarkup()
     for ch in chains:
         cid,name,story=ch[0],ch[1],ch[2]
         pc=get_player_chain(uid,cid)
-        if pc and pc[5]==1:
-            t+=f"✅ *{name}* — завершена\n"
+        if pc and pc[5]==1: t+=f"✅ *{name}* — завершена\n"
         elif pc:
             steps=json.loads(ch[3]);step=steps[pc[3]]
             t+=f"🔄 *{name}* — шаг {pc[3]+1}/{len(steps)}\n  {step['desc']} ({pc[4]}/{step['target']})\n"
@@ -1337,11 +1291,9 @@ def qc_start(call):
     c.execute("INSERT OR IGNORE INTO player_quest_chains (user_id,chain_id,current_step,step_progress,completed) VALUES (?,?,0,0,0)",(uid,cid))
     conn.commit();conn.close()
     bot.answer_callback_query(call.id,"Цепочка начата!")
-    call.data=f"qcrefresh"
     cmd_questchain(call.message)
 
 # ==================== БИРЖА ====================
-
 @bot.message_handler(commands=['trade'])
 @bot.message_handler(func=lambda m:m.text=="📦 Биржа")
 def menu_trade(message):
@@ -1381,7 +1333,7 @@ def tr_set(message,name):
 
 @bot.callback_query_handler(func=lambda c:c.data.startswith("trl_"))
 def trade_list(call):
-    uid=call.from_user.id;pg=int(call.data.split("_")[1]) if "_" in call.data[3:] else 0
+    uid=call.from_user.id;pg=int(call.data.split("_")[1])
     conn=sqlite3.connect(DB_PATH);c=conn.cursor()
     c.execute("SELECT offer_id,item_name,price FROM trade_offers WHERE active=1 AND seller_id!=? ORDER BY created_at DESC LIMIT 10 OFFSET ?",(uid,pg*10))
     offers=c.fetchall();conn.close()
@@ -1389,19 +1341,15 @@ def trade_list(call):
     t="📋 *Офферы*\n\n";m=types.InlineKeyboardMarkup()
     for oid,nm,pr in offers:
         t+=f"  {nm} — 🐟{pr}\n"
-        m.add(types.InlineKeyboardButton(f"Купить {nm} — 🐟{pr}",callback_data=f"trb_{oid}"))
+        m.add(types.InlineKeyboardButton(f"Купить {nm} — 🐟{pr}",callback_data=f"trbuy_{oid}"))
     nav=[]
     if pg>0: nav.append(types.InlineKeyboardButton("◀️",callback_data=f"trl_{pg-1}"))
     nav.append(types.InlineKeyboardButton("➡️",callback_data=f"trl_{pg+1}"))
-    m.add(*nav);m.add(types.InlineKeyboardButton("◀️",callback_data="trb"))
+    m.add(*nav);m.add(types.InlineKeyboardButton("◀️ В меню",callback_data="trb"))
     bot.edit_message_text(t,call.message.chat.id,call.message.message_id,parse_mode='Markdown',reply_markup=m)
 
-@bot.callback_query_handler(func=lambda c:c.data.startswith("trb_") and not c.data.startswith("trb"))
-def trade_buy(call):
-    pass
-
 @bot.callback_query_handler(func=lambda c:c.data.startswith("trbuy_"))
-def trade_buy2(call):
+def trade_buy(call):
     uid=call.from_user.id;oid=int(call.data.split("_")[1])
     conn=sqlite3.connect(DB_PATH);c=conn.cursor()
     c.execute("SELECT seller_id,item_name,item_type,price,active FROM trade_offers WHERE offer_id=?",(oid,));r=c.fetchone()
@@ -1415,7 +1363,6 @@ def trade_buy2(call):
     try: bot.send_message(sid,f"💰 {nm} продан за 🐟{pr}!")
     except: pass
 
-# Fix: use trbuy_ prefix for buy buttons
 @bot.callback_query_handler(func=lambda c:c.data=="trm")
 def trade_mine(call):
     uid=call.from_user.id;conn=sqlite3.connect(DB_PATH);c=conn.cursor()
@@ -1425,9 +1372,18 @@ def trade_mine(call):
     t="📦 *Мои офферы*\n\n";m=types.InlineKeyboardMarkup()
     for oid,nm,pr,act in offers:
         t+=f"  {'✅' if act else '❌'} {nm} — 🐟{pr}\n"
-        if act: m.add(types.InlineKeyboardButton(f"Снять {nm}",callback_data=f"trc_{oid}"))
-    m.add(types.InlineKeyboardButton("◀️",callback_data="trb"))
+        if act: m.add(types.InlineKeyboardButton(f"Снять {nm}",callback_data=f"trcan_{oid}"))
+    m.add(types.InlineKeyboardButton("◀️ В меню",callback_data="trb"))
     bot.edit_message_text(t,call.message.chat.id,call.message.message_id,parse_mode='Markdown',reply_markup=m)
+
+@bot.callback_query_handler(func=lambda c:c.data.startswith("trcan_"))
+def trade_cancel(call):
+    uid=call.from_user.id;oid=int(call.data.split("_")[1])
+    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
+    c.execute("SELECT item_name,item_type,active FROM trade_offers WHERE offer_id=? AND seller_id=?",(oid,uid));r=c.fetchone()
+    if not r or not r[2]: bot.answer_callback_query(call.id,"Не найден!");conn.close();return
+    c.execute("UPDATE trade_offers SET active=0 WHERE offer_id=?",(oid,));conn.commit();conn.close()
+    add_to_inv(uid,r[0],r[1]);bot.answer_callback_query(call.id,f"Снято: {r[0]}!")
 
 @bot.callback_query_handler(func=lambda c:c.data=="trb")
 def trade_back(call):
@@ -1438,16 +1394,15 @@ def trade_back(call):
     bot.edit_message_text("📦 *Биржа*",call.message.chat.id,call.message.message_id,parse_mode='Markdown',reply_markup=m)
 
 # ==================== КЛАНЫ ====================
-
 @bot.message_handler(commands=['clan'])
 @bot.message_handler(func=lambda m:m.text=="🐋 Клан")
 def menu_clan(message):
     uid=message.from_user.id;clan=get_clan_by_user(uid)
     if clan:
         cid=clan[0];members=get_clan_members(cid);mc=len(members)
-        t=f"🐋 *Клан: {clan[2]} {clan[3]}*\n\nЛидер: @{clan[4]}\nУчастников: {mc}/{MAX_CLAN_MEMBERS}\n\n"
+        t=f"🐋 *Клан: {clan[2]} {clan[3]}*\n\nЛидер: @{clan[1]}\nУчастников: {mc}/{MAX_CLAN_MEMBERS}\n\n"
         m=types.InlineKeyboardMarkup()
-        if clan[4]==uid:
+        if clan[1]==uid:
             m.add(types.InlineKeyboardButton("🏰 Клановое подземелье",callback_data=f"cds_{cid}"))
             m.add(types.InlineKeyboardButton("📋 Участники",callback_data=f"cmem_{cid}"))
         m.add(types.InlineKeyboardButton("🚪 Покинуть",callback_data=f"cleave_{cid}"))
@@ -1466,7 +1421,7 @@ def clan_create(call):
 def clan_create_name(message):
     uid=message.from_user.id;name=message.text.strip()
     if len(name)>30: bot.send_message(uid,"Слишком длинное!");return
-    bot.send_message(uid,f"Выберите эмбзлем: {' '.join(CLAN_EMOJIS)}\nОтправьте номер (1-{len(CLAN_EMOJIS)}):")
+    bot.send_message(uid,f"Выберите эмблему: {' '.join(CLAN_EMOJIS)}\nОтправьте номер (1-{len(CLAN_EMOJIS)}):")
     bot.register_next_step_handler_by_chat_id(message.chat.id,lambda m:clan_create_emblem(m,name))
 
 def clan_create_emblem(message,name):
@@ -1487,7 +1442,6 @@ def clan_leave(call):
     uid=call.from_user.id;cid=int(call.data.split("_")[1])
     conn=sqlite3.connect(DB_PATH);c=conn.cursor()
     c.execute("DELETE FROM clan_members WHERE user_id=? AND clan_id=?",(uid,cid))
-    # Если лидер ушёл — удаляем клан
     c.execute("SELECT leader_id FROM clans WHERE clan_id=?",(cid,))
     r=c.fetchone()
     if r and r[0]==uid:
@@ -1500,20 +1454,17 @@ def clan_leave(call):
 @bot.callback_query_handler(func=lambda c:c.data.startswith("cmem_"))
 def clan_members(call):
     cid=int(call.data.split("_")[1]);members=get_clan_members(cid)
-    t=f"📋 *Участники клана*\n\n"
+    t="📋 *Участники клана*\n\n"
     for mid in members:
         p=get_player(mid)
         if p: t+=f"  @{p[1]} ({get_seal_count(mid)} тюленей)\n"
     bot.edit_message_text(t,call.message.chat.id,call.message.message_id,parse_mode='Markdown')
 
-# --- Клановое подземелье ---
 @bot.callback_query_handler(func=lambda c:c.data.startswith("cds_"))
 def clan_dng_start(call):
     uid=call.from_user.id;cid=int(call.data.split("_")[1]);clan=get_clan_by_user(uid)
-    if not clan or clan[4]!=uid: bot.answer_callback_query(call.id,"Только лидер!");return
-    members=get_clan_members(cid)
-    # Проверка уровня
-    all_seals=[]
+    if not clan or clan[1]!=uid: bot.answer_callback_query(call.id,"Только лидер!");return
+    members=get_clan_members(cid);all_seals=[]
     for mid in members:
         for s in get_player_seals(mid):
             if s[11]==0 and s[9]>=CLAN_DUNGEON_MIN_LEVEL: all_seals.append(s)
@@ -1561,7 +1512,6 @@ def clan_dng_atk(call):
         log.append(f"Тюлени →{d} (монстр {max(0,mon['hp'])}❤️)")
         if mon["hp"]<=0: break
         dm=max(1,mon["str"]-td+random.randint(-2,6))
-        # Монстр бьёт случайного тюленя
         target=random.choice(all_seals);update_seal(target[0],health=max(1,target[3]-dm))
         thp-=dm;log.append(f"{mon['name']} →{target[2]} на {dm} (осталось {max(0,thp)}❤️)")
     if mon["hp"]<=0:
@@ -1602,7 +1552,6 @@ def clan_dng_flee(call):
     bot.edit_message_text("🏃 Отступление.",call.message.chat.id,call.message.message_id)
 
 # ==================== ФРАКЦИИ ====================
-
 @bot.message_handler(commands=['faction'])
 @bot.message_handler(func=lambda m:m.text=="🏛 Фракции")
 def menu_faction(message):
@@ -1628,7 +1577,6 @@ def faction_join(call):
     bot.answer_callback_query(call.id,f"Вступили: {FACTIONS[fid]['name']}!")
 
 # ==================== ГОЛОСОВАНИЕ ====================
-
 @bot.message_handler(commands=['vote'])
 @bot.message_handler(func=lambda m:m.text=="🗳 Голосование")
 def cmd_vote(message):
@@ -1662,7 +1610,6 @@ def vote_cb(call):
         bot.edit_message_text(f"🗳 Голос: {vote.upper()}\nНужно 3+ голоса.",call.message.chat.id,call.message.message_id,parse_mode='Markdown')
 
 # ==================== БРАКИ ====================
-
 @bot.message_handler(commands=['marry'])
 @bot.message_handler(func=lambda m:m.text=="💍 Брак")
 def menu_marry(message):
@@ -1670,10 +1617,10 @@ def menu_marry(message):
     if not seals: bot.send_message(uid,"Нет тюленей!");return
     if get_seal_count(uid)>=MAX_SEALS: bot.send_message(uid,f"Макс {MAX_SEALS}!");return
     m=types.InlineKeyboardMarkup()
-    for s in seals: m.add(types.InlineKeyboardButton(f"{s[2]} (ур.{s[9]})",callback_data=f"ms_{s[0]}"))
+    for s in seals: m.add(types.InlineKeyboardButton(f"{s[2]} (ур.{s[9]})",callback_data=f"msel_{s[0]}"))
     bot.send_message(uid,"Выберите тюленя:",reply_markup=m)
 
-@bot.callback_query_handler(func=lambda c:c.data.startswith("ms_") and not c.data.startswith("msel_"))
+@bot.callback_query_handler(func=lambda c:c.data.startswith("msel_"))
 def marry_sel(call):
     sid=int(call.data.split("_")[1])
     bot.send_message(call.from_user.id,"ID или @username партнёра:")
@@ -1693,10 +1640,10 @@ def marry_partner(message,sid1):
     ps=get_player_seals(pid)
     if not ps: bot.send_message(uid,"Нет тюленей у игрока!");return
     m=types.InlineKeyboardMarkup()
-    for s in ps: m.add(types.InlineKeyboardButton(f"{s[2]} (ур.{s[9]})",callback_data=f"md_{sid1}_{s[0]}_{pid}"))
+    for s in ps: m.add(types.InlineKeyboardButton(f"{s[2]} (ур.{s[9]})",callback_data=f"mdo_{sid1}_{s[0]}_{pid}"))
     bot.send_message(uid,"Выберите тюленя партнёра:",reply_markup=m)
 
-@bot.callback_query_handler(func=lambda c:c.data.startswith("md_"))
+@bot.callback_query_handler(func=lambda c:c.data.startswith("mdo_"))
 def marry_do(call):
     uid=call.from_user.id;p=call.data.split("_");s1,s2,pid=int(p[1]),int(p[2]),int(p[3])
     se1,se2=get_seal(s1),get_seal(s2)
@@ -1720,35 +1667,42 @@ def marry_do(call):
     bot.edit_message_text(msg,call.message.chat.id,call.message.message_id,parse_mode='Markdown')
 
 # ==================== ЗАДАНИЯ ====================
-
 @bot.message_handler(commands=['quests'])
 @bot.message_handler(func=lambda m:m.text=="📋 Задания")
 def menu_quests(message):
-    uid=message.from_user.id;generate_daily_quests(uid);quests=get_daily_quests(uid)
-    if not quests: bot.send_message(uid,"Не сгенерированы!");return
-    t="📋 *Задания*\n\n";m=types.InlineKeyboardMarkup()
+    uid=message.from_user.id
+    try:
+        generate_daily_quests(uid)
+        quests=get_daily_quests(uid)
+    except Exception as e:
+        bot.send_message(uid,f"⚠️ Ошибка БД: {e}");return
+    if not quests: bot.send_message(uid,"Задания не сгенерированы.");return
+    t="📋 *Ежедневные задания*\n\n";m=types.InlineKeyboardMarkup()
     qd={q["type"]:q["desc"] for q in QUEST_TEMPLATES}
     for q in quests:
         qid,_,qt,qtgt,qprog,qrew,_,cl=q
         d=qd.get(qt,qt);s=f"{qprog}/{qtgt}"
-        if cl: t+=f"  ✅ {d} — {s} (🐟{qrew})\n"
-        elif qprog>=qtgt: t+=f"  🎁 {d} — {s} (🐟{qrew})\n";m.add(types.InlineKeyboardButton(f"🐟{qrew}",callback_data=f"qc_{qid}"))
+        if cl: t+=f"  ✅ {d} — {s} (🐟{qrew}) — получено\n"
+        elif qprog>=qtgt:
+            t+=f"  🎁 {d} — {s} (🐟{qrew}) — готово!\n"
+            m.add(types.InlineKeyboardButton(f"Забрать 🐟{qrew}",callback_data=f"qclaim_{qid}"))
         else: t+=f"  ⬜ {d} — {s} (🐟{qrew})\n"
     if m.keyboard: bot.send_message(uid,t,parse_mode='Markdown',reply_markup=m)
     else: bot.send_message(uid,t,parse_mode='Markdown')
 
-@bot.callback_query_handler(func=lambda c:c.data.startswith("qc_"))
+@bot.callback_query_handler(func=lambda c:c.data.startswith("qclaim_"))
 def quest_claim(call):
     uid=call.from_user.id;qid=int(call.data.split("_")[1])
     conn=sqlite3.connect(DB_PATH);c=conn.cursor()
-    c.execute("SELECT * FROM daily_quests WHERE quest_id=? AND claimed=0",(qid,));r=c.fetchone()
-    if not r: bot.answer_callback_query(call.id,"Получено!");conn.close();return
-    if r[4]<r[3]: bot.answer_callback_query(call.id,"Не выполнено!");conn.close();return
+    c.execute("SELECT quest_id,quest_target,quest_progress,quest_reward,claimed FROM daily_quests WHERE quest_id=? AND claimed=0",(qid,));r=c.fetchone()
+    if not r: bot.answer_callback_query(call.id,"Уже получено!");conn.close();return
+    qid_db,qtgt,qprog,qrew,cl=r
+    if qprog<qtgt: bot.answer_callback_query(call.id,"Не выполнено!");conn.close();return
     c.execute("UPDATE daily_quests SET claimed=1 WHERE quest_id=?",(qid,));conn.commit();conn.close()
-    add_fishnets(uid,r[5]);bot.answer_callback_query(call.id,f"🐟{r[5]}!")
+    add_fishnets(uid,qrew);bot.answer_callback_query(call.id,f"Получено 🐟{qrew}!")
+    menu_quests(call.message)
 
 # ==================== ФОНОВЫЕ ПОТОКИ ====================
-
 def stats_decay():
     while True:
         time.sleep(3600)
@@ -1770,7 +1724,6 @@ def health_regen():
             c.execute("SELECT seal_id,health,max_health FROM seals WHERE health<max_health")
             for sid,hp,mhp in c.fetchall():
                 bonus=25
-                # Проверка навыка регенерации
                 c2=conn.cursor()
                 c2.execute("SELECT COUNT(*) FROM seal_skills WHERE seal_id=? AND skill_effect='regen'",(sid,))
                 if c2.fetchone()[0]>0: bonus+=5
@@ -1782,7 +1735,6 @@ threading.Thread(target=stats_decay,daemon=True).start()
 threading.Thread(target=health_regen,daemon=True).start()
 
 # ==================== КОМАНДЫ В МЕНЮ ====================
-
 bot.set_my_commands([
     types.BotCommand("start","Главное меню"),types.BotCommand("help","Справка"),
     types.BotCommand("profile","Профиль"),types.BotCommand("gallery","Галерея"),
