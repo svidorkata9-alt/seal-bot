@@ -526,9 +526,7 @@ def get_sell_price(item_name):
     if item_name in SHOP_ITEMS: return int(SHOP_ITEMS[item_name]["price"] * 0.5)
     if item_name in RESOURCE_SELL_PRICES: return RESOURCE_SELL_PRICES[item_name]
     if item_name in POTION_SELL_PRICES: return POTION_SELL_PRICES[item_name]
-    m = re.search(r'
-$$
-([A-Z])
+    m = re.search(r'$$([A-Z])
 $$
 ', item_name)
     if m and m.group(1) in RARITY_SELL_PRICES:
