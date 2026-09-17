@@ -2509,8 +2509,6 @@ if __name__ == "__main__":
     print("Бот запущен! 🦭")
     print(f"TOKEN: {TOKEN[:10]}...{TOKEN[-5:]}")
     try:
-@bot.message_handler(func=lambda m: True)
-def debug_catch_all(message):
     print(f"Получено сообщение: chat_id={message.chat.id} user_id={message.from_user.id} text={message.text}")
 
         bot.polling(none_stop=True)
