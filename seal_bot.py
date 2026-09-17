@@ -529,16 +529,13 @@ def get_sell_price(item_name):
    m = re.search(r'^([a-z]+)_', item_name)
 if m and m.group(1) in RARITY_SELL_PRICES:
     return RARITY_SELL_PRICES[m.group(1)]
-
-    if m and m.group(1) in RARITY_SELL_PRICES: return RARITY_SELL_PRICES[m.group(1)]
     for recipe in CRAFT_RECIPES:
         if recipe["name"] == item_name:
             total = sum(RESOURCE_SELL_PRICES.get(r, 5) * a for r, a in recipe["resources"].items())
             return int(total * 0.6)
     return 5
-
-def exp_for_level(lvl): return lvl * 100 + (lvl - 1) * 50
-
+def exp_for_level(lvl):
+    return lvl * 100 + (lvl - 1) * 50
 def get_exp_mult():
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     now = datetime.now().isoformat()
@@ -547,7 +544,6 @@ def get_exp_mult():
         try: return float(r[0])
         except ValueError: return 1.0
     return 1.0
-
 def get_shop_disc():
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     now = datetime.now().isoformat()
