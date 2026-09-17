@@ -2508,11 +2508,11 @@ if __name__ == "__main__":
     run_migrations()
     print("Бот запущен! 🦭")
     print(f"TOKEN: {TOKEN[:10]}...{TOKEN[-5:]}")
-    @bot.message_handler(func=lambda m: True)
+    try:
+@bot.message_handler(func=lambda m: True)
 def debug_catch_all(message):
     print(f"Получено сообщение: chat_id={message.chat.id} user_id={message.from_user.id} text={message.text}")
 
-    try:
         bot.polling(none_stop=True)
     except Exception as e:
         print(f"❌ Ошибка polling: {e}")
