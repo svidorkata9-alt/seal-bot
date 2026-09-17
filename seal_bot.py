@@ -5,120 +5,133 @@ import random
 import threading
 import time
 import os
+import shutil
+import json
 from datetime import datetime, date, timedelta
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 bot = telebot.TeleBot(TOKEN)
 
 DB_PATH = "seal_life.db"
+BACKUP_DIR = "backups"
 MAX_SEALS = 5
 FISHING_COOLDOWN_MIN = 10
 
-# ==================== ИНИЦИАЛИЗАЦИЯ БД ====================
+# ==================== СИСТЕМА МИГРАЦИИ ====================
 
-def init_db():
-    conn = sqlite3.connect(DB_PATH)
+def backup_db():
+    if not os.path.exists(DB_PATH):
+        return None
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_path = os.path.join(BACKUP_DIR, f"seal_life_{timestamp}.db")
+    shutil.copy2(DB_PATH, backup_path)
+    backups = sorted(
+        [os.path.join(BACKUP_DIR, f) for f in os.listdir(BACKUP_DIR) if f.endswith(".db")],
+        key=os.path.getmtime)
+    for old in backups[:-10]:
+        os.remove(old)
+    return backup_path
+
+def get_db_version(conn):
     c = conn.cursor()
+    try:
+        c.execute("SELECT value FROM _meta WHERE key = 'schema_version'")
+        row = c.fetchone()
+        return int(row[0]) if row else 0
+    except sqlite3.OperationalError:
+        return 0
 
+def set_db_version(conn, version):
+    c = conn.cursor()
+    c.execute("CREATE TABLE IF NOT EXISTS _meta (key TEXT PRIMARY KEY, value TEXT)")
+    c.execute("INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', ?)", (str(version),))
+    conn.commit()
+
+def _add_column_if_missing(c, table, column, coldef):
+    c.execute(f"PRAGMA table_info({table})")
+    cols = [row[1] for row in c.fetchall()]
+    if column not in cols:
+        c.execute(f"ALTER TABLE {table} ADD COLUMN {column} {coldef}")
+
+def migration_1(c):
     c.execute('''CREATE TABLE IF NOT EXISTS players (
-        user_id INTEGER PRIMARY KEY,
-        username TEXT,
-        display_name TEXT,
-        fishnets INTEGER DEFAULT 100,
-        faction TEXT,
-        faction_rep INTEGER DEFAULT 0,
-        fish_cooldown TEXT
+        user_id INTEGER PRIMARY KEY, username TEXT, display_name TEXT,
+        photo_path TEXT, fishnets INTEGER DEFAULT 100,
+        faction TEXT, faction_rep INTEGER DEFAULT 0, fish_cooldown TEXT
     )''')
-
     c.execute('''CREATE TABLE IF NOT EXISTS seals (
-        seal_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        owner_id INTEGER,
-        name TEXT,
-        health INTEGER DEFAULT 100,
-        max_health INTEGER DEFAULT 100,
-        mood INTEGER DEFAULT 80,
-        satiety INTEGER DEFAULT 80,
-        strength INTEGER DEFAULT 10,
-        defense INTEGER DEFAULT 5,
-        level INTEGER DEFAULT 1,
-        exp INTEGER DEFAULT 0,
-        is_baby INTEGER DEFAULT 0,
-        born_at TEXT,
-        equipped_weapon TEXT,
-        equipped_armor TEXT,
-        equipped_helmet TEXT,
-        equipped_shield TEXT,
-        equipped_accessory TEXT,
-        work_cooldown TEXT,
-        play_cooldown TEXT,
-        photo_path TEXT,
+        seal_id INTEGER PRIMARY KEY AUTOINCREMENT, owner_id INTEGER, name TEXT,
+        health INTEGER DEFAULT 100, max_health INTEGER DEFAULT 100,
+        mood INTEGER DEFAULT 80, satiety INTEGER DEFAULT 80,
+        strength INTEGER DEFAULT 10, defense INTEGER DEFAULT 5,
+        level INTEGER DEFAULT 1, exp INTEGER DEFAULT 0,
+        is_baby INTEGER DEFAULT 0, born_at TEXT,
+        equipped_weapon TEXT, equipped_armor TEXT, equipped_helmet TEXT,
+        equipped_shield TEXT, equipped_accessory TEXT,
+        work_cooldown TEXT, play_cooldown TEXT, photo_path TEXT,
         work_cooldown_min INTEGER DEFAULT 0
     )''')
-
     c.execute('''CREATE TABLE IF NOT EXISTS marriages (
         marriage_id INTEGER PRIMARY KEY AUTOINCREMENT,
         seal1_id INTEGER, seal2_id INTEGER,
-        player1_id INTEGER, player2_id INTEGER,
-        created_at TEXT
+        player1_id INTEGER, player2_id INTEGER, created_at TEXT
     )''')
-
     c.execute('''CREATE TABLE IF NOT EXISTS inventory (
         inv_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER, item_name TEXT,
-        item_type TEXT, quantity INTEGER DEFAULT 1
+        user_id INTEGER, item_name TEXT, item_type TEXT, quantity INTEGER DEFAULT 1
     )''')
-
     c.execute('''CREATE TABLE IF NOT EXISTS daily_quests (
-        quest_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER, quest_type TEXT,
+        quest_id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, quest_type TEXT,
         quest_target INTEGER, quest_progress INTEGER DEFAULT 0,
         quest_reward INTEGER, date TEXT, claimed INTEGER DEFAULT 0
     )''')
-
     c.execute('''CREATE TABLE IF NOT EXISTS dungeon_runs (
-        run_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER, seal_id INTEGER,
+        run_id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, seal_id INTEGER,
         current_floor INTEGER DEFAULT 1, active INTEGER DEFAULT 0
     )''')
-
     c.execute('''CREATE TABLE IF NOT EXISTS trade_offers (
-        offer_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        seller_id INTEGER, item_name TEXT, item_type TEXT,
-        price INTEGER, created_at TEXT, active INTEGER DEFAULT 1
+        offer_id INTEGER PRIMARY KEY AUTOINCREMENT, seller_id INTEGER,
+        item_name TEXT, item_type TEXT, price INTEGER,
+        created_at TEXT, active INTEGER DEFAULT 1
     )''')
-
     c.execute('''CREATE TABLE IF NOT EXISTS votes (
-        vote_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER, event_type TEXT, vote TEXT, date TEXT,
-        UNIQUE(user_id, date)
+        vote_id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER,
+        event_type TEXT, vote TEXT, date TEXT, UNIQUE(user_id, date)
     )''')
-
     c.execute('''CREATE TABLE IF NOT EXISTS active_events (
-        event_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        event_type TEXT, effect TEXT,
-        expires_at TEXT, active INTEGER DEFAULT 1
+        event_id INTEGER PRIMARY KEY AUTOINCREMENT, event_type TEXT,
+        effect TEXT, expires_at TEXT, active INTEGER DEFAULT 1
     )''')
 
-    # Миграции
-    for table, col, coldef in [
-        ("seals", "equipped_accessory", "TEXT"),
-        ("seals", "work_cooldown", "TEXT"),
-        ("seals", "play_cooldown", "TEXT"),
-        ("seals", "photo_path", "TEXT"),
-        ("seals", "work_cooldown_min", "INTEGER DEFAULT 0"),
-        ("players", "faction", "TEXT"),
-        ("players", "faction_rep", "INTEGER DEFAULT 0"),
-        ("players", "fish_cooldown", "TEXT"),
-    ]:
-        c.execute(f"PRAGMA table_info({table})")
-        cols = [row[1] for row in c.fetchall()]
-        if col not in cols:
-            c.execute(f"ALTER TABLE {table} ADD COLUMN {col} {coldef}")
+MIGRATIONS = [migration_1]
 
+def run_migrations():
+    backup_path = backup_db()
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    current_version = get_db_version(conn)
+    total = len(MIGRATIONS)
+    if current_version >= total:
+        conn.close()
+        return f"БД актуальна (версия {current_version})"
+    applied = []
+    for i in range(current_version, total):
+        try:
+            MIGRATIONS[i](c)
+            applied.append(i + 1)
+        except Exception as e:
+            conn.close()
+            raise RuntimeError(f"Ошибка в миграции {i+1}: {e}")
+    set_db_version(conn, total)
     conn.commit()
     conn.close()
+    msg = f"Миграции применены: {applied}"
+    if backup_path:
+        msg += f" | Бэкап: {backup_path}"
+    return msg
 
-init_db()
+print(run_migrations())
 
 # ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 # Индексы seals: 0=seal_id, 1=owner_id, 2=name, 3=health, 4=max_health,
@@ -126,6 +139,8 @@ init_db()
 # 11=is_baby, 12=born_at, 13=equipped_weapon, 14=equipped_armor,
 # 15=equipped_helmet, 16=equipped_shield, 17=equipped_accessory,
 # 18=work_cooldown, 19=play_cooldown, 20=photo_path, 21=work_cooldown_min
+# Индексы players: 0=user_id, 1=username, 2=display_name, 3=photo_path,
+# 4=fishnets, 5=faction, 6=faction_rep, 7=fish_cooldown
 
 def get_player(user_id):
     conn = sqlite3.connect(DB_PATH)
@@ -267,8 +282,7 @@ def check_levelup(seal_id):
         seal = get_seal(seal_id)
         if not seal:
             break
-        level = seal[9]
-        exp = seal[10]
+        level, exp = seal[9], seal[10]
         needed = exp_for_level(level)
         if exp >= needed:
             new_level = level + 1
@@ -370,16 +384,16 @@ def can_craft(user_id, recipe):
 # ==================== ФРАКЦИИ ====================
 
 FACTIONS = {
-    "hunters": {"name": "Стая охотников 🎯", "desc": "Бонус к награде за бои", "color": "🎯"},
-    "fashion": {"name": "Клуб модников 💅", "desc": "Бонус к настроению и аксессуарам", "color": "💅"},
-    "explorers": {"name": "Гильдия исследователей 🧭", "desc": "Бонус к опыту и подземельям", "color": "🧭"},
+    "hunters": {"name": "Стая охотников 🎯", "desc": "Бонус к награде за бои"},
+    "fashion": {"name": "Клуб модников 💅", "desc": "Бонус к настроению и аксессуарам"},
+    "explorers": {"name": "Гильдия исследователей 🧭", "desc": "Бонус к опыту и подземельям"},
 }
 
 def get_faction_discount(user_id):
     player = get_player(user_id)
-    if not player or not player[4]:
+    if not player or not player[5]:
         return 0.0
-    rep = player[5]
+    rep = player[6]
     if rep >= 100: return 0.30
     elif rep >= 50: return 0.15
     elif rep >= 20: return 0.05
@@ -387,9 +401,9 @@ def get_faction_discount(user_id):
 
 def add_faction_rep(user_id, amount):
     player = get_player(user_id)
-    if not player or not player[4]:
+    if not player or not player[5]:
         return
-    update_player(user_id, faction_rep=player[5] + amount)
+    update_player(user_id, faction_rep=player[6] + amount)
 
 # ==================== МОНСТРЫ ====================
 
@@ -474,24 +488,21 @@ def check_vote_result():
     for v, count in rows:
         if v == "yes": yes_v = count
         elif v == "no": no_v = count
-    total = yes_v + no_v
-    return total >= 3 and yes_v > no_v
+    return (yes_v + no_v) >= 3 and yes_v > no_v
 
 def activate_event(event_type, effect):
     expires = datetime.now() + timedelta(hours=24)
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("UPDATE active_events SET active = 0 WHERE active = 1")
-    c.execute("INSERT INTO active_events (event_type, effect, expires_at, active) VALUES (?, ?, ?, 1)",
-              (event_type, effect, expires.isoformat()))
+    c.execute("INSERT INTO active_events (event_type, effect, expires_at, active) VALUES (?, ?, ?, 1)", (event_type, effect, expires.isoformat()))
     conn.commit()
     conn.close()
 
 def get_active_event_text():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT event_type, effect, expires_at FROM active_events WHERE active = 1 AND expires_at > ?",
-              (datetime.now().isoformat(),))
+    c.execute("SELECT event_type FROM active_events WHERE active = 1 AND expires_at > ?", (datetime.now().isoformat(),))
     row = c.fetchone()
     conn.close()
     if not row:
@@ -502,6 +513,14 @@ def get_active_event_text():
     return None
 
 # ==================== СТАТУС ТЮЛЕНЯ ====================
+
+def get_married_seal_ids():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT seal1_id FROM marriages UNION SELECT seal2_id FROM marriages")
+    ids = set(row[0] for row in c.fetchall())
+    conn.close()
+    return ids
 
 def get_seal_status_emoji(seal, marriages_set):
     if seal[11] == 1: return "🍼"
@@ -520,72 +539,42 @@ def get_seal_status_emoji(seal, marriages_set):
     if seal[5] >= 50 and seal[6] >= 50: return "🎮"
     if seal[3] > 50: return "⚔️"
     return "🦭"
-
-def get_married_seal_ids():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT seal1_id FROM marriages UNION SELECT seal2_id FROM marriages")
-    ids = set(row[0] for row in c.fetchall())
-    conn.close()
-    return ids
 # ==================== ОБРАБОТЧИКИ ====================
 
 @bot.message_handler(commands=['start'])
 def cmd_start(message):
     user_id = message.from_user.id
     username = message.from_user.username or message.from_user.first_name
-
     player = get_player(user_id)
     if not player:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
-        c.execute("INSERT INTO players (user_id, username, display_name, fishnets) VALUES (?, ?, ?, 100)",
-                  (user_id, username, username))
+        c.execute("INSERT INTO players (user_id, username, display_name, fishnets) VALUES (?, ?, ?, 100)", (user_id, username, username))
         conn.commit()
         conn.close()
-
         seal_name = random.choice(["Никифор", "Плюха", "Шлёпа", "Бубль", "Тюня", "Фрэнк", "Сэм"])
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
-        c.execute("INSERT INTO seals (owner_id, name, health, max_health, mood, satiety, strength, defense, level, exp) VALUES (?, ?, 100, 100, 80, 80, 10, 5, 1, 0)",
-                  (user_id, seal_name))
+        c.execute("INSERT INTO seals (owner_id, name, health, max_health, mood, satiety, strength, defense, level, exp) VALUES (?, ?, 100, 100, 80, 80, 10, 5, 1, 0)", (user_id, seal_name))
         conn.commit()
         conn.close()
-
         bot.send_message(user_id, f"Добро пожаловать в Мир Тюленей! 🦭\n\nВам выдали тюленя по имени {seal_name} и 100 рыбнеток 🐟.\nИспользуйте кнопки меню для игры!")
     else:
         bot.send_message(user_id, "С возвращением! 🦭 Вы уже зарегистрированы.")
-
     show_main_menu(user_id)
 
 @bot.message_handler(commands=['help'])
 def cmd_help(message):
     user_id = message.from_user.id
-    text = "🦭 *Справка по командам*\n\n"
-    text += "*Основные:*\n"
-    text += "  /start — главное меню\n"
-    text += "  /help — эта справка\n"
-    text += "  /profile — профиль (количество тюленей)\n"
-    text += "  /gallery — галерея всех тюленей\n"
-    text += "  /setphoto — установить фото тюленя\n"
-    text += "  /leaderboard — таблица лидеров по уровню\n\n"
-    text += "*Тюлень:*\n"
-    text += "  🦭 Мой тюлень — карточка (кормить, играть, лечить, экипировка)\n\n"
-    text += "*Магазин и крафт:*\n"
-    text += "  /shop — магазин (еда, аптечки, аксессуары)\n"
-    text += "  /craft — крафт оружия и брони из ресурсов\n"
-    text += "  /trade — биржа предметов между игроками\n\n"
-    text += "*Сражения:*\n"
-    text += "  /battle — бой с боссом (даёт ресурсы)\n"
-    text += "  /dungeon — подземелье (5 этажей)\n"
-    text += "  /work — отправить тюленя на работу\n\n"
-    text += "*Активности:*\n"
-    text += "  /fish — мини-игра «Рыбалка» (кулдаун 10 мин)\n"
-    text += "  /vote — голосование за дневное событие\n"
-    text += "  /faction — фракции и репутация\n"
-    text += "  /marry — брак тюленей (макс. 5)\n"
-    text += "  /quests — ежедневные задания\n\n"
-    text += "*Регенерация:* +25 HP в час"
+    text = ("🦭 *Справка по командам*\n\n"
+            "*Основные:*\n  /start — главное меню\n  /help — эта справка\n"
+            "  /profile — профиль\n  /gallery — галерея тюленей\n"
+            "  /setphoto — фото тюленя\n  /leaderboard — лидеры\n\n"
+            "*Магазин и крафт:*\n  /shop — магазин\n  /craft — крафт из ресурсов\n  /trade — биржа\n\n"
+            "*Сражения:*\n  /battle — бой с боссом\n  /dungeon — подземелье\n  /work — работа\n\n"
+            "*Активности:*\n  /fish — рыбалка\n  /vote — голосование\n"
+            "  /faction — фракции\n  /marry — брак (макс. 5)\n  /quests — задания\n\n"
+            "*Регенерация:* +25 HP в час")
     bot.send_message(user_id, text, parse_mode='Markdown')
     show_main_menu(user_id)
 
@@ -600,8 +589,6 @@ def show_main_menu(user_id):
     markup.add(types.KeyboardButton("📦 Биржа"), types.KeyboardButton("🏛 Фракции"))
     bot.send_message(user_id, "Выберите действие:", reply_markup=markup)
 
-# ==================== ПРОФИЛЬ ====================
-
 @bot.message_handler(commands=['profile'])
 @bot.message_handler(func=lambda m: m.text == "👤 Профиль")
 def cmd_profile(message):
@@ -610,29 +597,17 @@ def cmd_profile(message):
     if not player:
         bot.send_message(user_id, "Вы не зарегистрированы. Напишите /start")
         return
-
     count = get_seal_count(user_id)
-    fishnets = player[3]
-    faction_name = "Нет"
-    if player[4] and player[4] in FACTIONS:
-        faction_name = FACTIONS[player[4]]["name"]
-    rep = player[5]
-
-    text = f"👤 *Ваш профиль*\n\n"
-    text += f"Тюленей: {count} / {MAX_SEALS}\n"
-    text += f"Рыбнетки: 🐟 {fishnets}\n"
-    text += f"Фракция: {faction_name}"
-    if player[4]:
+    fishnets = player[4]
+    faction_name = FACTIONS[player[5]]["name"] if player[5] and player[5] in FACTIONS else "Нет"
+    rep = player[6]
+    text = f"👤 *Ваш профиль*\n\nТюленей: {count} / {MAX_SEALS}\nРыбнетки: 🐟 {fishnets}\nФракция: {faction_name}"
+    if player[5]:
         text += f" (репутация: {rep})"
-    text += "\n"
-
     ev = get_active_event_text()
     if ev:
-        text += f"\n🎉 Активное событие: {ev}"
-
+        text += f"\n\n🎉 Активное событие: {ev}"
     bot.send_message(user_id, text, parse_mode='Markdown')
-
-# ==================== ГАЛЕРЕЯ ====================
 
 @bot.message_handler(commands=['gallery'])
 def cmd_gallery(message):
@@ -641,47 +616,36 @@ def cmd_gallery(message):
     if not seals:
         bot.send_message(user_id, "У вас нет тюленей! Напишите /start")
         return
-
     married_ids = get_married_seal_ids()
     fishnets = get_fishnets(user_id)
     text = f"🖼 *Галерея тюленей*\n🐟 Рыбнетки: {fishnets}\n\n"
-
     for s in seals:
         status = get_seal_status_emoji(s, married_ids)
-        text += f"{status} *{s[2]}* — ур.{s[9]}\n"
-        text += f"  💪 Сила: {s[7]} | 🛡️ Защита: {s[8]} | 🍖 Сытость: {s[6]} | ❤️ HP: {s[3]}/{s[4]}\n"
+        text += f"{status} *{s[2]}* — ур.{s[9]}\n  💪 Сила: {s[7]} | 🛡️ Защита: {s[8]} | 🍖 Сытость: {s[6]} | ❤️ HP: {s[3]}/{s[4]}\n"
         if s[11] == 1:
-            text += f"  🍼 Тюленёнок\n"
+            text += "  🍼 Тюленёнок\n"
         text += "\n"
-
     bot.send_message(user_id, text, parse_mode='Markdown')
-
-# ==================== ТАБЛИЦА ЛИДЕРОВ ====================
 
 @bot.message_handler(commands=['leaderboard'])
 @bot.message_handler(func=lambda m: m.text == "🏆 Лидеры")
 def cmd_leaderboard(message):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute('''SELECT seals.name, seals.level, seals.owner_id, players.username
+    c.execute('''SELECT seals.name, seals.level, players.username
                  FROM seals JOIN players ON seals.owner_id = players.user_id
                  ORDER BY seals.level DESC, seals.exp DESC LIMIT 20''')
     rows = c.fetchall()
     conn.close()
-
     if not rows:
         bot.send_message(message.from_user.id, "Таблица лидеров пуста!")
         return
-
     text = "🏆 *Таблица лидеров*\n\n"
     medals = ["🥇", "🥈", "🥉"]
-    for i, (name, level, owner_id, username) in enumerate(rows):
+    for i, (name, level, username) in enumerate(rows):
         medal = medals[i] if i < 3 else f"{i+1}."
         text += f"{medal} {name} — ур.{level} (@{username})\n"
-
     bot.send_message(message.from_user.id, text, parse_mode='Markdown')
-
-# ==================== ФОТО ТЮЛЕНЯ ====================
 
 @bot.message_handler(commands=['setphoto'])
 def cmd_setphoto(message):
@@ -690,7 +654,6 @@ def cmd_setphoto(message):
     if not seals:
         bot.send_message(user_id, "У вас нет тюленей! Напишите /start")
         return
-
     markup = types.InlineKeyboardMarkup()
     for s in seals:
         markup.add(types.InlineKeyboardButton(f"{s[2]} (ур.{s[9]})", callback_data=f"setphoto_sel_{s[0]}"))
@@ -720,8 +683,6 @@ def process_seal_photo(message, seal_id):
     except Exception as e:
         bot.send_message(user_id, f"❌ Ошибка: {e}")
 
-# ==================== ТЮЛЕНЬ ====================
-
 @bot.message_handler(func=lambda m: m.text == "🦭 Мой тюлень")
 def menu_seal(message):
     user_id = message.from_user.id
@@ -729,7 +690,6 @@ def menu_seal(message):
     if not seals:
         bot.send_message(user_id, "У вас нет тюленей! Напишите /start")
         return
-
     markup = types.InlineKeyboardMarkup()
     for s in seals:
         baby = " 🍼" if s[11] == 1 else ""
@@ -744,23 +704,17 @@ def seal_selected(call, seal_id=None):
     if not seal:
         bot.answer_callback_query(call.id, "Тюлень не найден!")
         return
-
     user_id = call.from_user.id
     fishnets = get_fishnets(user_id)
     eff_str, eff_def, eff_hp = get_effective_stats(seal_id)
     mood_bonus = get_mood_bonus(seal_id)
-
-    text = f"🦭 *{seal[2]}*\n"
-    text += f"🐟 Рыбнетки: {fishnets}\n\n"
+    text = f"🦭 *{seal[2]}*\n🐟 Рыбнетки: {fishnets}\n\n"
     text += f"Уровень: {seal[9]} (опыт: {seal[10]}/{exp_for_level(seal[9])})\n"
     text += f"❤️ Здоровье: {seal[3]}/{seal[4]}\n"
     text += f"😊 Настроение: {seal[5]}"
     if mood_bonus > 0:
         text += f" (+{mood_bonus} от аксессуара)"
-    text += f"\n🍖 Сытость: {seal[6]}\n"
-    text += f"💪 Сила: {seal[7]} (с экип: {eff_str})\n"
-    text += f"🛡️ Защита: {seal[8]} (с экип: {eff_def})\n"
-
+    text += f"\n🍖 Сытость: {seal[6]}\n💪 Сила: {seal[7]} (с экип: {eff_str})\n🛡️ Защита: {seal[8]} (с экип: {eff_def})\n"
     equipped = []
     if seal[13]: equipped.append(f"⚔️ {seal[13]}")
     if seal[14]: equipped.append(f"🛡️ {seal[14]}")
@@ -768,26 +722,18 @@ def seal_selected(call, seal_id=None):
     if seal[16]: equipped.append(f"🛡️ {seal[16]}")
     if seal[17]: equipped.append(f"🎀 {seal[17]}")
     text += f"\nЭкипировка: {', '.join(equipped) if equipped else 'нет'}\n"
-
     if seal[11] == 1:
         text += "\n🍼 Это тюленёнок! Он вырастет через несколько дней.\n"
-
     markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        types.InlineKeyboardButton("🍖 Покормить", callback_data=f"feed_{seal_id}"),
-        types.InlineKeyboardButton("🎾 Поиграть", callback_data=f"play_{seal_id}"))
-    markup.add(
-        types.InlineKeyboardButton("💊 Лечить", callback_data=f"heal_{seal_id}"),
-        types.InlineKeyboardButton("👕 Экипировка", callback_data=f"equip_{seal_id}"))
-    markup.add(
-        types.InlineKeyboardButton("📸 Фото", callback_data=f"setphoto_sel_{seal_id}"),
-        types.InlineKeyboardButton("✏️ Переименовать", callback_data=f"rename_{seal_id}"))
+    markup.add(types.InlineKeyboardButton("🍖 Покормить", callback_data=f"feed_{seal_id}"),
+               types.InlineKeyboardButton("🎾 Поиграть", callback_data=f"play_{seal_id}"))
+    markup.add(types.InlineKeyboardButton("💊 Лечить", callback_data=f"heal_{seal_id}"),
+               types.InlineKeyboardButton("👕 Экипировка", callback_data=f"equip_{seal_id}"))
+    markup.add(types.InlineKeyboardButton("📸 Фото", callback_data=f"setphoto_sel_{seal_id}"),
+               types.InlineKeyboardButton("✏️ Переименовать", callback_data=f"rename_{seal_id}"))
     markup.add(types.InlineKeyboardButton("◀️ Назад", callback_data="back_main"))
-
-    chat_id = call.message.chat.id
-    message_id = call.message.message_id
+    chat_id, message_id = call.message.chat.id, call.message.message_id
     photo_path = seal[20]
-
     if photo_path and os.path.exists(photo_path):
         try:
             bot.delete_message(chat_id, message_id)
@@ -810,18 +756,13 @@ def seal_feed(call):
     seal_id = int(call.data.split("_")[1])
     inv = get_inventory(user_id)
     food_items = [i for i in inv if i[3] == "food"]
-
     if not food_items:
         bot.answer_callback_query(call.id, "У вас нет еды! Купите в магазине.")
         return
-
     markup = types.InlineKeyboardMarkup()
     for item in food_items:
-        name, qty = item[2], item[4]
-        info = SHOP_ITEMS.get(name, {})
-        markup.add(types.InlineKeyboardButton(
-            f"{name} (x{qty}) — сытость +{info.get('satiety', 0)}",
-            callback_data=f"do_feed_{seal_id}_{item[2]}"))
+        info = SHOP_ITEMS.get(item[2], {})
+        markup.add(types.InlineKeyboardButton(f"{item[2]} (x{item[4]}) — сытость +{info.get('satiety', 0)}", callback_data=f"do_feed_{seal_id}_{item[2]}"))
     markup.add(types.InlineKeyboardButton("◀️ Назад", callback_data=f"sealinfo_{seal_id}"))
     bot.edit_message_text("Чем покормить?", call.message.chat.id, call.message.message_id, reply_markup=markup)
 
@@ -838,11 +779,9 @@ def seal_do_feed(call):
     seal = get_seal(seal_id)
     if not seal:
         return
-    new_satiety = min(100, seal[6] + info["satiety"])
-    new_mood = min(100, seal[5] + info.get("mood", 5))
-    update_seal(seal_id, satiety=new_satiety, mood=new_mood)
+    update_seal(seal_id, satiety=min(100, seal[6] + info["satiety"]), mood=min(100, seal[5] + info.get("mood", 5)))
     remove_from_inventory(user_id, item_name)
-    bot.answer_callback_query(call.id, f"{seal[2]} съел {item_name}! Сытость +{info['satiety']}, настроение +{info.get('mood', 5)}")
+    bot.answer_callback_query(call.id, f"{seal[2]} съел {item_name}!")
     update_quest_progress(user_id, "feed", 1)
     seal_selected(call, seal_id)
 
@@ -856,15 +795,14 @@ def seal_heal(call):
     if seal[3] >= seal[4]:
         bot.answer_callback_query(call.id, "Тюлень уже здоров!")
         return
-    qty = get_item_quantity(user_id, "Аптечка 💊")
-    if qty <= 0:
-        bot.answer_callback_query(call.id, "У вас нет аптечек! Купите в магазине.")
+    if get_item_quantity(user_id, "Аптечка 💊") <= 0:
+        bot.answer_callback_query(call.id, "У вас нет аптечек!")
         return
     heal_amount = SHOP_ITEMS["Аптечка 💊"]["heal"]
     new_hp = min(seal[4], seal[3] + heal_amount)
     update_seal(seal_id, health=new_hp)
     remove_from_inventory(user_id, "Аптечка 💊")
-    bot.answer_callback_query(call.id, f"💊 {seal[2]} вылечен на {heal_amount} HP! Теперь {new_hp}/{seal[4]}")
+    bot.answer_callback_query(call.id, f"💊 {seal[2]} вылечен на {heal_amount} HP!")
     seal_selected(call, seal_id)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("play_"))
@@ -880,28 +818,23 @@ def seal_play(call):
     play_cd = seal[19]
     if play_cd:
         try:
-            cd_time = datetime.fromisoformat(play_cd)
-            remaining = timedelta(minutes=PLAY_COOLDOWN_MIN) - (datetime.now() - cd_time)
+            remaining = timedelta(minutes=PLAY_COOLDOWN_MIN) - (datetime.now() - datetime.fromisoformat(play_cd))
             if remaining.total_seconds() > 0:
-                mins = int(remaining.total_seconds() // 60)
-                secs = int(remaining.total_seconds() % 60)
-                bot.answer_callback_query(call.id, f"⏳ Ещё отдыхает! Подождите {mins}м {secs}с")
+                bot.answer_callback_query(call.id, f"⏳ Подождите {int(remaining.total_seconds()//60)}м {int(remaining.total_seconds()%60)}с")
                 return
         except Exception:
             pass
-    new_mood = min(100, seal[5] + 25)
-    new_satiety = max(0, seal[6] - 5)
     exp_gain = int(random.randint(5, 15) * get_exp_multiplier())
-    new_exp = seal[10] + exp_gain
-    update_seal(seal_id, mood=new_mood, satiety=new_satiety, exp=new_exp, play_cooldown=datetime.now().isoformat())
+    update_seal(seal_id, mood=min(100, seal[5] + 25), satiety=max(0, seal[6] - 5),
+                exp=seal[10] + exp_gain, play_cooldown=datetime.now().isoformat())
     leveled = check_levelup(seal_id)
     update_quest_progress(user_id, "play", 1)
-    if player := get_player(user_id):
-        if player[4] == "fashion":
-            add_faction_rep(user_id, 1)
-    msg = f"🎾 Вы поиграли с {seal[2]}!\nНастроение +25, сытость -5, опыт +{exp_gain}\n⏳ Следующая игра через {PLAY_COOLDOWN_MIN} мин"
+    player = get_player(user_id)
+    if player and player[5] == "fashion":
+        add_faction_rep(user_id, 1)
+    msg = f"🎾 Поиграли с {seal[2]}! Настроение +25, опыт +{exp_gain}"
     if leveled:
-        msg += f"\n🎉 {seal[2]} достиг уровня {leveled}!"
+        msg += f"\n🎉 Уровень {leveled}!"
     bot.answer_callback_query(call.id, msg)
     seal_selected(call, seal_id)
 
@@ -917,7 +850,7 @@ def process_seal_rename(message, seal_id):
         bot.send_message(message.from_user.id, "Имя слишком длинное (макс 20 символов).")
         return
     update_seal(seal_id, name=new_name)
-    bot.send_message(message.from_user.id, f"✅ Тюлень переименован в {new_name}!")
+    bot.send_message(message.from_user.id, f"✅ Переименован в {new_name}!")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("equip_"))
 def seal_equip_menu(call):
@@ -948,23 +881,20 @@ def seal_do_equip(call):
     seal = get_seal(seal_id)
     if not seal:
         return
-    slot_map = {"weapon": "equipped_weapon", "armor": "equipped_armor", "helmet": "equipped_helmet",
-                "shield": "equipped_shield", "accessory": "equipped_accessory"}
+    slot_map = {"weapon": "equipped_weapon", "armor": "equipped_armor", "helmet": "equipped_helmet", "shield": "equipped_shield", "accessory": "equipped_accessory"}
     slot = slot_map.get(item_type)
     if not slot:
-        bot.answer_callback_query(call.id, "Неизвестный тип предмета!")
+        bot.answer_callback_query(call.id, "Неизвестный тип!")
         return
-    col_idx = {"equipped_weapon": 13, "equipped_armor": 14, "equipped_helmet": 15,
-               "equipped_shield": 16, "equipped_accessory": 17}.get(slot)
+    col_idx = {"equipped_weapon": 13, "equipped_armor": 14, "equipped_helmet": 15, "equipped_shield": 16, "equipped_accessory": 17}.get(slot)
     current_val = seal[col_idx] if col_idx is not None else None
     if current_val:
-        old_type = ITEM_TYPES.get(current_val, "armor")
-        add_to_inventory(user_id, current_val, old_type, 1)
+        add_to_inventory(user_id, current_val, ITEM_TYPES.get(current_val, "armor"), 1)
     update_seal(seal_id, **{slot: item_name})
     remove_from_inventory(user_id, item_name)
-    if player := get_player(user_id):
-        if player[4] == "fashion" and item_type == "accessory":
-            add_faction_rep(user_id, 2)
+    player = get_player(user_id)
+    if player and player[5] == "fashion" and item_type == "accessory":
+        add_faction_rep(user_id, 2)
     bot.answer_callback_query(call.id, f"Надето: {item_name}")
     seal_selected(call, seal_id)
 
@@ -983,15 +913,11 @@ def back_to_main(call):
 def menu_shop(message):
     user_id = message.from_user.id
     fishnets = get_fishnets(user_id)
-    discount = get_shop_discount()
-    faction_disc = get_faction_discount(user_id)
-    total_disc = max(discount, faction_disc)
-
+    total_disc = max(get_shop_discount(), get_faction_discount(user_id))
     text = f"🛒 *Магазин*\nУ вас: 🐟 {fishnets}\n"
     if total_disc > 0:
         text += f"🎁 Скидка: {int(total_disc * 100)}%\n"
     text += "\n"
-
     markup = types.InlineKeyboardMarkup(row_width=1)
     for name, info in SHOP_ITEMS.items():
         price = int(info["price"] * (1 - total_disc))
@@ -1000,12 +926,8 @@ def menu_shop(message):
         elif info["type"] == "medkit":
             text += f"  {name} — 🐟{price} (лечит +{info['heal']} HP)\n"
         elif info["type"] == "accessory":
-            bonus = ACCESSORY_BONUSES.get(name, 0)
-            text += f"  {name} — 🐟{price} (аксессуар, настроение +{bonus})\n"
-        else:
-            text += f"  {name} — 🐟{price}\n"
+            text += f"  {name} — 🐟{price} (настроение +{ACCESSORY_BONUSES.get(name, 0)})\n"
         markup.add(types.InlineKeyboardButton(f"Купить {name} — 🐟{price}", callback_data=f"buy_{name}"))
-
     bot.send_message(user_id, text, parse_mode='Markdown', reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("buy_"))
@@ -1016,12 +938,9 @@ def shop_buy(call):
     if not info:
         bot.answer_callback_query(call.id, "Предмет не найден!")
         return
-    discount = get_shop_discount()
-    faction_disc = get_faction_discount(user_id)
-    total_disc = max(discount, faction_disc)
+    total_disc = max(get_shop_discount(), get_faction_discount(user_id))
     price = int(info["price"] * (1 - total_disc))
-    fishnets = get_fishnets(user_id)
-    if fishnets < price:
+    if get_fishnets(user_id) < price:
         bot.answer_callback_query(call.id, "Недостаточно рыбнеток!")
         return
     add_fishnets(user_id, -price)
@@ -1039,11 +958,11 @@ def menu_craft(message):
     for recipe in CRAFT_RECIPES:
         res_text = ", ".join([f"{r} x{a}" for r, a in recipe["resources"].items()])
         bonus = ITEM_BONUSES.get(recipe["name"], {})
-        bonus_text = ""
-        if "str" in bonus: bonus_text += f"💪+{bonus['str']} "
-        if "def" in bonus: bonus_text += f"🛡️+{bonus['def']} "
-        if "hp" in bonus: bonus_text += f"❤️+{bonus['hp']}"
-        text += f"{recipe['name']} ({bonus_text.strip()})\n  Нужно: {res_text}\n\n"
+        bt = ""
+        if "str" in bonus: bt += f"💪+{bonus['str']} "
+        if "def" in bonus: bt += f"🛡️+{bonus['def']} "
+        if "hp" in bonus: bt += f"❤️+{bonus['hp']}"
+        text += f"{recipe['name']} ({bt.strip()})\n  Нужно: {res_text}\n\n"
     markup = types.InlineKeyboardMarkup()
     for recipe in CRAFT_RECIPES:
         can = "✅" if can_craft(user_id, recipe) else "❌"
@@ -1054,11 +973,7 @@ def menu_craft(message):
 def craft_do(call):
     user_id = call.from_user.id
     item_name = call.data[6:]
-    recipe = None
-    for r in CRAFT_RECIPES:
-        if r["name"] == item_name:
-            recipe = r
-            break
+    recipe = next((r for r in CRAFT_RECIPES if r["name"] == item_name), None)
     if not recipe:
         bot.answer_callback_query(call.id, "Рецепт не найден!")
         return
@@ -1069,9 +984,9 @@ def craft_do(call):
         remove_from_inventory(user_id, resource, amount)
     add_to_inventory(user_id, item_name, recipe["type"])
     update_quest_progress(user_id, "craft", 1)
-    if player := get_player(user_id):
-        if player[4] == "hunters":
-            add_faction_rep(user_id, 1)
+    player = get_player(user_id)
+    if player and player[5] == "hunters":
+        add_faction_rep(user_id, 1)
     bot.answer_callback_query(call.id, f"Скрафчено: {item_name}!")
 
 # ==================== РАБОТА ====================
@@ -1090,7 +1005,7 @@ def menu_work(message):
             continue
         markup.add(types.InlineKeyboardButton(f"{s[2]} (ур.{s[9]})", callback_data=f"worksel_{s[0]}"))
     if not markup.keyboard:
-        bot.send_message(user_id, "Все ваши тюлени — малыши, они не могут работать!")
+        bot.send_message(user_id, "Все ваши тюлени — малыши!")
         return
     bot.send_message(user_id, "💼 Выберите тюленя для работы:", reply_markup=markup)
 
@@ -1101,26 +1016,21 @@ def work_select_job(call):
     if not seal:
         return
     if seal[6] < 20:
-        bot.answer_callback_query(call.id, "Тюлень слишком голоден для работы! Сытость < 20.")
+        bot.answer_callback_query(call.id, "Сытость < 20, покормите тюленя!")
         return
     work_cd = seal[18]
     if work_cd:
         try:
-            cd_time = datetime.fromisoformat(work_cd)
             cd_min = seal[21] if seal[21] else 30
-            remaining = timedelta(minutes=cd_min) - (datetime.now() - cd_time)
+            remaining = timedelta(minutes=cd_min) - (datetime.now() - datetime.fromisoformat(work_cd))
             if remaining.total_seconds() > 0:
-                mins = int(remaining.total_seconds() // 60)
-                secs = int(remaining.total_seconds() % 60)
-                bot.answer_callback_query(call.id, f"⏳ Тюлень устал! Подождите {mins}м {secs}с")
+                bot.answer_callback_query(call.id, f"⏳ Подождите {int(remaining.total_seconds()//60)}м {int(remaining.total_seconds()%60)}с")
                 return
         except Exception:
             pass
     text = f"💼 Выберите работу для {seal[2]}:\n\n"
     for i, job in enumerate(JOBS):
-        text += f"{i+1}. {job['name']} — {job['desc']}\n"
-        text += f"   Награда: 🐟{job['reward_min']}-{job['reward_max']}, кулдаун: {job['cooldown_min']} мин\n"
-        text += f"   Настроение -{job['mood_cost']}, сытость -{job['satiety_cost']}\n\n"
+        text += f"{i+1}. {job['name']} — 🐟{job['reward_min']}-{job['reward_max']}, кд {job['cooldown_min']}мин\n"
     markup = types.InlineKeyboardMarkup()
     for i, job in enumerate(JOBS):
         markup.add(types.InlineKeyboardButton(f"{job['name']} — 🐟{job['reward_min']}-{job['reward_max']}", callback_data=f"workdo_{seal_id}_{i}"))
@@ -1138,39 +1048,27 @@ def work_do(call):
         return
     job = JOBS[job_idx]
     seal = get_seal(seal_id)
-    if not seal:
-        return
-    if seal[6] < 20:
-        bot.answer_callback_query(call.id, "Тюлень слишком голоден! Покормите его.")
-        return
-    if seal[5] < 10:
-        bot.answer_callback_query(call.id, "Настроение слишком низкое! Поиграйте с тюленем.")
+    if not seal or seal[6] < 20 or seal[5] < 10:
+        bot.answer_callback_query(call.id, "Тюлень не может работать!")
         return
     work_cd = seal[18]
     if work_cd:
         try:
-            cd_time = datetime.fromisoformat(work_cd)
-            remaining = timedelta(minutes=job["cooldown_min"]) - (datetime.now() - cd_time)
+            remaining = timedelta(minutes=job["cooldown_min"]) - (datetime.now() - datetime.fromisoformat(work_cd))
             if remaining.total_seconds() > 0:
-                mins = int(remaining.total_seconds() // 60)
-                secs = int(remaining.total_seconds() % 60)
-                bot.answer_callback_query(call.id, f"⏳ Ещё не отдохнул! Подождите {mins}м {secs}с")
+                bot.answer_callback_query(call.id, f"⏳ Подождите {int(remaining.total_seconds()//60)}м {int(remaining.total_seconds()%60)}с")
                 return
         except Exception:
             pass
-    reward = random.randint(job["reward_min"], job["reward_max"])
-    reward += seal[9] * 3
-    new_mood = max(0, seal[5] - job["mood_cost"])
-    new_satiety = max(0, seal[6] - job["satiety_cost"])
+    reward = random.randint(job["reward_min"], job["reward_max"]) + seal[9] * 3
     exp_gain = int(random.randint(10, 25) * get_exp_multiplier())
-    new_exp = seal[10] + exp_gain
-    update_seal(seal_id, mood=new_mood, satiety=new_satiety, exp=new_exp,
-                work_cooldown=datetime.now().isoformat(), work_cooldown_min=job["cooldown_min"])
+    update_seal(seal_id, mood=max(0, seal[5] - job["mood_cost"]), satiety=max(0, seal[6] - job["satiety_cost"]),
+                exp=seal[10] + exp_gain, work_cooldown=datetime.now().isoformat(), work_cooldown_min=job["cooldown_min"])
     add_fishnets(user_id, reward)
     leveled = check_levelup(seal_id)
-    log = f"💼 {seal[2]} поработал: {job['name']}\n💰 Заработано: 🐟{reward}\n📈 Опыт: +{exp_gain}\n😊 Настроение: -{job['mood_cost']}\n🍖 Сытость: -{job['satiety_cost']}\n⏳ Кулдаун: {job['cooldown_min']} мин"
+    log = f"💼 {seal[2]} поработал: {job['name']}\n💰 🐟{reward}\n📈 Опыт +{exp_gain}\n⏳ КД {job['cooldown_min']}мин"
     if leveled:
-        log += f"\n🎉 {seal[2]} достиг уровня {leveled}!"
+        log += f"\n🎉 Уровень {leveled}!"
     update_quest_progress(user_id, "work", 1)
     bot.edit_message_text(log, call.message.chat.id, call.message.message_id, parse_mode='Markdown')
 
@@ -1190,7 +1088,7 @@ def menu_battle(message):
             continue
         markup.add(types.InlineKeyboardButton(f"{s[2]} (ур.{s[9]})", callback_data=f"battle_{s[0]}"))
     if not markup.keyboard:
-        bot.send_message(user_id, "Все ваши тюлени — малыши, они не могут драться!")
+        bot.send_message(user_id, "Все ваши тюлени — малыши!")
         return
     bot.send_message(user_id, "Выберите тюленя для боя:", reply_markup=markup)
 
@@ -1199,56 +1097,47 @@ def do_battle(call):
     user_id = call.from_user.id
     seal_id = int(call.data.split("_")[1])
     seal = get_seal(seal_id)
-    if not seal:
-        return
-    if seal[3] <= 0:
-        bot.answer_callback_query(call.id, "Тюлень слишком ранен!")
+    if not seal or seal[3] <= 0:
+        bot.answer_callback_query(call.id, "Тюлень не может драться!")
         return
     eff_str, eff_def, eff_hp = get_effective_stats(seal_id)
-    boss_template = random.choice(BOSSES)
-    boss_name = boss_template["name"]
+    boss = random.choice(BOSSES)
+    boss_name = boss["name"]
     boss_hp = random.randint(60, 100) + seal[9] * 10
     boss_str = random.randint(8, 15) + seal[9] * 2
     boss_def = random.randint(3, 8) + seal[9]
-
-    log = [f"⚔️ *Бой: {seal[2]} против {boss_name}*\n"]
-    log.append(f"{seal[2]}: ❤️{eff_hp} 💪{eff_str} 🛡️{eff_def}")
-    log.append(f"{boss_name}: ❤️{boss_hp} 💪{boss_str} 🛡️{boss_def}\n")
+    log = [f"⚔️ *Бой: {seal[2]} vs {boss_name}*\n", f"{seal[2]}: ❤️{eff_hp} 💪{eff_str} 🛡️{eff_def}", f"{boss_name}: ❤️{boss_hp} 💪{boss_str} 🛡️{boss_def}\n"]
     seal_hp = seal[3]
-    round_num = 0
-    while seal_hp > 0 and boss_hp > 0:
-        round_num += 1
-        if round_num > 20:
-            log.append("Бой слишком затянулся! Ничья.")
+    for rnd in range(1, 21):
+        if seal_hp <= 0 or boss_hp <= 0:
             break
-        dmg_to_boss = max(1, eff_str - boss_def + random.randint(-3, 5))
-        boss_hp -= dmg_to_boss
-        log.append(f"Раунд {round_num}: {seal[2]} наносит {dmg_to_boss} урона! (босс: {max(0, boss_hp)} ❤️)")
+        dmg = max(1, eff_str - boss_def + random.randint(-3, 5))
+        boss_hp -= dmg
+        log.append(f"Р{rnd}: {seal[2]} бьёт на {dmg}! (босс {max(0,boss_hp)}❤️)")
         if boss_hp <= 0:
             break
-        dmg_to_seal = max(1, boss_str - eff_def + random.randint(-2, 4))
-        seal_hp -= dmg_to_seal
-        log.append(f"{boss_name} наносит {dmg_to_seal} урона! ({seal[2]}: {max(0, seal_hp)} ❤️)")
-
+        dmg_m = max(1, boss_str - eff_def + random.randint(-2, 4))
+        seal_hp -= dmg_m
+        log.append(f"{boss_name} бьёт на {dmg_m}! ({seal[2]} {max(0,seal_hp)}❤️)")
     if boss_hp <= 0:
         reward = random.randint(20, 50) + seal[9] * 5
         exp_gain = int(random.randint(20, 40) * get_exp_multiplier())
         add_fishnets(user_id, reward)
         update_seal(seal_id, exp=seal[10] + exp_gain, mood=min(100, seal[5] + 15))
         leveled = check_levelup(seal_id)
-        log.append(f"\n🎉 *Победа!* Награда: 🐟{reward}, опыт +{exp_gain}")
+        log.append(f"\n🎉 *Победа!* 🐟{reward}, опыт +{exp_gain}")
         if leveled:
-            log.append(f"📈 {seal[2]} достиг уровня {leveled}!")
-        dropped = process_drops(user_id, boss_template["drops"])
+            log.append(f"📈 Уровень {leveled}!")
+        dropped = process_drops(user_id, boss["drops"])
         if dropped:
             log.append(f"📦 Добыча: {', '.join(dropped)}")
         update_quest_progress(user_id, "battle", 1)
-        if player := get_player(user_id):
-            if player[4] == "hunters":
-                add_faction_rep(user_id, 2)
+        player = get_player(user_id)
+        if player and player[5] == "hunters":
+            add_faction_rep(user_id, 2)
     elif seal_hp <= 0:
         update_seal(seal_id, health=max(1, seal[3] // 4), mood=max(0, seal[5] - 20))
-        log.append(f"\n💀 *Поражение...* {seal[2]} ранен и расстроен.")
+        log.append(f"\n💀 *Поражение...*")
     else:
         log.append("\n🤝 Ничья!")
     bot.edit_message_text("\n".join(log), call.message.chat.id, call.message.message_id, parse_mode='Markdown')
@@ -1271,7 +1160,7 @@ def menu_dungeon(message):
     if not markup.keyboard:
         bot.send_message(user_id, "Все ваши тюлени — малыши!")
         return
-    bot.send_message(user_id, "🏰 Выберите тюленя для спуска в подземелье (5 этажей):", reply_markup=markup)
+    bot.send_message(user_id, "🏰 Выберите тюленя для подземелья (5 этажей):", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("dngstart_"))
 def dungeon_start(call):
@@ -1281,7 +1170,7 @@ def dungeon_start(call):
     if not seal:
         return
     if seal[3] <= 20:
-        bot.answer_callback_query(call.id, "Тюлень слишком слаб для подземелья! Здоровье < 20.")
+        bot.answer_callback_query(call.id, "HP < 20, лечите тюленя!")
         return
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -1294,10 +1183,8 @@ def dungeon_start(call):
 def dungeon_floor(call, seal_id, floor):
     seal = get_seal(seal_id)
     monster = get_dungeon_monster(floor)
-    eff_str, eff_def, eff_hp = get_effective_stats(seal_id)
-    text = f"🏰 *Подземелье — Этаж {floor}/5*\n\n"
-    text += f"🦭 {seal[2]}: ❤️{seal[3]} 💪{eff_str} 🛡️{eff_def}\n"
-    text += f"{monster['name']}: ❤️{monster['hp']} 💪{monster['str']} 🛡️{monster['def']}\n"
+    eff_str, eff_def, _ = get_effective_stats(seal_id)
+    text = f"🏰 *Этаж {floor}/5*\n\n🦭 {seal[2]}: ❤️{seal[3]} 💪{eff_str} 🛡️{eff_def}\n{monster['name']}: ❤️{monster['hp']} 💪{monster['str']} 🛡️{monster['def']}\n"
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("⚔️ Атаковать", callback_data=f"dng_atk_{seal_id}_{floor}"))
     markup.add(types.InlineKeyboardButton("🏃 Сбежать", callback_data=f"dng_flee_{seal_id}_{floor}"))
@@ -1307,28 +1194,26 @@ def dungeon_floor(call, seal_id, floor):
 def dungeon_attack(call):
     user_id = call.from_user.id
     parts = call.data.split("_")
-    seal_id = int(parts[2])
-    floor = int(parts[3])
+    seal_id, floor = int(parts[2]), int(parts[3])
     seal = get_seal(seal_id)
     if not seal:
         return
     monster = get_dungeon_monster(floor)
-    eff_str, eff_def, eff_hp = get_effective_stats(seal_id)
+    eff_str, eff_def, _ = get_effective_stats(seal_id)
     seal_hp = seal[3]
     log = [f"⚔️ Этаж {floor}: {seal[2]} vs {monster['name']}"]
     while seal_hp > 0 and monster["hp"] > 0:
         dmg = max(1, eff_str - monster["def"] + random.randint(-2, 5))
         monster["hp"] -= dmg
-        log.append(f"{seal[2]} бьёт на {dmg}! (монстр: {max(0, monster['hp'])} ❤️)")
+        log.append(f"{seal[2]} бьёт на {dmg}! (монстр {max(0,monster['hp'])}❤️)")
         if monster["hp"] <= 0:
             break
         dmg_m = max(1, monster["str"] - eff_def + random.randint(-1, 4))
         seal_hp -= dmg_m
-        log.append(f"{monster['name']} бьёт на {dmg_m}! ({seal[2]}: {max(0, seal_hp)} ❤️)")
-
+        log.append(f"{monster['name']} бьёт на {dmg_m}! ({seal[2]} {max(0,seal_hp)}❤️)")
     if monster["hp"] <= 0:
         update_seal(seal_id, health=max(1, seal_hp))
-        log.append(f"\n✅ Монстр повержен!")
+        log.append("\n✅ Монстр повержен!")
         dropped = process_drops(user_id, monster["drops"])
         if dropped:
             log.append(f"📦 Добыча: {', '.join(dropped)}")
@@ -1339,13 +1224,13 @@ def dungeon_attack(call):
             s = get_seal(seal_id)
             update_seal(seal_id, exp=s[10] + exp_gain)
             leveled = check_levelup(seal_id)
-            log.append(f"🏆 *Подземелье пройдено!* Награда: 🐟{reward}, опыт +{exp_gain}")
+            log.append(f"🏆 *Пройдено!* 🐟{reward}, опыт +{exp_gain}")
             if leveled:
                 log.append(f"📈 Уровень {leveled}!")
             update_quest_progress(user_id, "dungeon", 1)
-            if player := get_player(user_id):
-                if player[4] == "explorers":
-                    add_faction_rep(user_id, 3)
+            player = get_player(user_id)
+            if player and player[5] == "explorers":
+                add_faction_rep(user_id, 3)
             conn = sqlite3.connect(DB_PATH)
             c = conn.cursor()
             c.execute("UPDATE dungeon_runs SET active = 0 WHERE user_id = ?", (user_id,))
@@ -1353,15 +1238,15 @@ def dungeon_attack(call):
             conn.close()
             bot.edit_message_text("\n".join(log), call.message.chat.id, call.message.message_id, parse_mode='Markdown')
         else:
-            next_floor = floor + 1
-            log.append(f"Открыт этаж {next_floor}!")
+            nf = floor + 1
+            log.append(f"Открыт этаж {nf}!")
             markup = types.InlineKeyboardMarkup()
-            markup.add(types.InlineKeyboardButton("➡️ Дальше", callback_data=f"dng_next_{seal_id}_{next_floor}"))
+            markup.add(types.InlineKeyboardButton("➡️ Дальше", callback_data=f"dng_next_{seal_id}_{nf}"))
             markup.add(types.InlineKeyboardButton("🏃 Выйти", callback_data=f"dng_flee_{seal_id}_{floor}"))
             bot.edit_message_text("\n".join(log), call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=markup)
     elif seal_hp <= 0:
         update_seal(seal_id, health=1, mood=max(0, seal[5] - 30))
-        log.append(f"\n💀 {seal[2]} повержен... Вы выброшены из подземелья.")
+        log.append(f"\n💀 {seal[2]} повержен...")
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute("UPDATE dungeon_runs SET active = 0 WHERE user_id = ?", (user_id,))
@@ -1372,9 +1257,7 @@ def dungeon_attack(call):
 @bot.callback_query_handler(func=lambda c: c.data.startswith("dng_next_"))
 def dungeon_next(call):
     parts = call.data.split("_")
-    seal_id = int(parts[2])
-    floor = int(parts[3])
-    dungeon_floor(call, seal_id, floor)
+    dungeon_floor(call, int(parts[2]), int(parts[3]))
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("dng_flee_"))
 def dungeon_flee(call):
@@ -1384,9 +1267,17 @@ def dungeon_flee(call):
     c.execute("UPDATE dungeon_runs SET active = 0 WHERE user_id = ?", (user_id,))
     conn.commit()
     conn.close()
-    bot.edit_message_text("🏃 Вы сбежали из подземелья.", call.message.chat.id, call.message.message_id)
+    bot.edit_message_text("🏃 Вы сбежали.", call.message.chat.id, call.message.message_id)
 
-# ==================== РЫБАЛКА (МИНИ-ИГРА) ====================
+# ==================== РЫБАЛКА ====================
+
+FISH_TYPES = [
+    {"name": "Малёк 🐤", "reward": (3, 8), "correct": "Подсечь!"},
+    {"name": "Окунь 🐟", "reward": (8, 15), "correct": "Подсечь!"},
+    {"name": "Сёмга 🐠", "reward": (15, 25), "correct": "Ждать"},
+    {"name": "Золотая рыбка ✨", "reward": (30, 50), "correct": "Ждать"},
+    {"name": "Краб 🦀", "reward": (10, 20), "correct": "Отпустить"},
+]
 
 @bot.message_handler(commands=['fish'])
 @bot.message_handler(func=lambda m: m.text == "🎣 Рыбалка")
@@ -1394,108 +1285,62 @@ def cmd_fish(message):
     user_id = message.from_user.id
     player = get_player(user_id)
     if not player:
-        bot.send_message(user_id, "Вы не зарегистрированы. Напишите /start")
+        bot.send_message(user_id, "Напишите /start")
         return
-
-    fish_cd = player[6]
+    fish_cd = player[7]
     if fish_cd:
         try:
-            cd_time = datetime.fromisoformat(fish_cd)
-            remaining = timedelta(minutes=FISHING_COOLDOWN_MIN) - (datetime.now() - cd_time)
+            remaining = timedelta(minutes=FISHING_COOLDOWN_MIN) - (datetime.now() - datetime.fromisoformat(fish_cd))
             if remaining.total_seconds() > 0:
-                mins = int(remaining.total_seconds() // 60)
-                secs = int(remaining.total_seconds() % 60)
-                bot.send_message(user_id, f"⏳ Рыбалка на кулдауне! Подождите {mins}м {secs}с")
+                bot.send_message(user_id, f"⏳ Подождите {int(remaining.total_seconds()//60)}м {int(remaining.total_seconds()%60)}с")
                 return
         except Exception:
             pass
-
-    # Генерируем мини-игру
-    fish_types = [
-        {"name": "Малёк 🐤", "reward": (3, 8), "correct": "Подсечь!"},
-        {"name": "Окунь 🐟", "reward": (8, 15), "correct": "Подсечь!"},
-        {"name": "Сёмга 🐠", "reward": (15, 25), "correct": "Ждать"},
-        {"name": "Золотая рыбка ✨", "reward": (30, 50), "correct": "Ждать"},
-        {"name": "Краб 🦀", "reward": (10, 20), "correct": "Отпустить"},
-    ]
-    fish = random.choice(fish_types)
-    wrong_options = ["Подсечь!", "Ждать", "Отпустить"]
-    wrong_options.remove(fish["correct"])
-    options = wrong_options + [fish["correct"]]
-    random.shuffle(options)
-
-    bonus = get_fishing_bonus()
-    reward_min = int(fish["reward"][0] * bonus)
-    reward_max = int(fish["reward"][1] * bonus)
-
-    text = f"🎣 *Рыбалка!*\n\n"
-    text += f"Поклёвка! Кажется, это {fish['name']}.\n"
-    text += f"Что делать? У вас 5 секунд!\n"
-
+    fish = random.choice(FISH_TYPES)
+    opts = ["Подсечь!", "Ждать", "Отпустить"]
+    opts.remove(fish["correct"])
+    opts.append(fish["correct"])
+    random.shuffle(opts)
+    text = f"🎣 *Рыбалка!*\n\nПоклёвка! Кажется, это {fish['name']}.\nЧто делать? У вас 5 секунд!\n"
     markup = types.InlineKeyboardMarkup(row_width=3)
-    for opt in options:
+    for opt in opts:
         markup.add(types.InlineKeyboardButton(opt, callback_data=f"fish_{opt}_{fish['name']}"))
-
     msg = bot.send_message(user_id, text, parse_mode='Markdown', reply_markup=markup)
-
-    # Таймер на 5 секунд
-    def fishing_timeout():
+    def timeout():
         time.sleep(5)
         try:
             bot.edit_message_text(f"⏰ Время вышло! {fish['name']} уплыл.", msg.chat.id, msg.message_id)
         except Exception:
             pass
         update_player(user_id, fish_cooldown=datetime.now().isoformat())
-
-    timer_thread = threading.Thread(target=fishing_timeout, daemon=True)
-    timer_thread.start()
+    threading.Thread(target=timeout, daemon=True).start()
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("fish_"))
 def fish_callback(call):
     user_id = call.from_user.id
     parts = call.data.split("_", 2)
-    action = parts[1]
-    fish_name = parts[2]
-
-    fish_types = {
-        "Малёк 🐤": {"reward": (3, 8), "correct": "Подсечь!"},
-        "Окунь 🐟": {"reward": (8, 15), "correct": "Подсечь!"},
-        "Сёмга 🐠": {"reward": (15, 25), "correct": "Ждать"},
-        "Золотая рыбка ✨": {"reward": (30, 50), "correct": "Ждать"},
-        "Краб 🦀": {"reward": (10, 20), "correct": "Отпустить"},
-    }
-
-    fish = fish_types.get(fish_name)
+    action, fish_name = parts[1], parts[2]
+    fish = next((f for f in FISH_TYPES if f["name"] == fish_name), None)
     if not fish:
         bot.answer_callback_query(call.id, "Рыбалка истекла!")
         return
-
     bonus = get_fishing_bonus()
-    reward_min = int(fish["reward"][0] * bonus)
-    reward_max = int(fish["reward"][1] * bonus)
-
+    r_min, r_max = int(fish["reward"][0] * bonus), int(fish["reward"][1] * bonus)
     if action == fish["correct"]:
-        reward = random.randint(reward_min, reward_max)
+        reward = random.randint(r_min, r_max)
         add_fishnets(user_id, reward)
-        bot.edit_message_text(call.message.chat.id, call.message.message_id,
-            f"🎣 *Поймано!*\n\n{fish_name}!\nНаграда: 🐟{reward}", parse_mode='Markdown')
+        bot.edit_message_text(call.message.chat.id, call.message.message_id, f"🎣 *Поймано!*\n\n{fish_name}!\nНаграда: 🐟{reward}", parse_mode='Markdown')
     else:
-        bot.edit_message_text(call.message.chat.id, call.message.message_id,
-            f"💨 Увы! {fish_name} сорвался!\nНужно было: {fish['correct']}", parse_mode='Markdown')
-
+        bot.edit_message_text(call.message.chat.id, call.message.message_id, f"💨 {fish_name} сорвался!\nНужно было: {fish['correct']}", parse_mode='Markdown')
     update_player(user_id, fish_cooldown=datetime.now().isoformat())
 
-# ==================== БИРЖА (ТРЕЙД) ====================
+# ==================== БИРЖА ====================
 
 @bot.message_handler(commands=['trade'])
 @bot.message_handler(func=lambda m: m.text == "📦 Биржа")
 def menu_trade(message):
     user_id = message.from_user.id
     text = "📦 *Биржа предметов*\n\n"
-    text += "1. *Создать оффер* — выставить предмет на продажу\n"
-    text += "2. *Активные офферы* — посмотреть и купить\n"
-    text += "3. *Мои офферы* — управлять своими\n"
-
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("📤 Создать оффер", callback_data="trade_create"))
     markup.add(types.InlineKeyboardButton("📋 Активные офферы", callback_data="trade_list_0"))
@@ -1515,16 +1360,11 @@ def trade_create(call):
             continue
         markup.add(types.InlineKeyboardButton(f"{item[2]} (x{item[4]})", callback_data=f"tradesel_{item[2]}"))
     markup.add(types.InlineKeyboardButton("◀️ Назад", callback_data="trade_back"))
-    bot.edit_message_text("Какой предмет выставить на продажу?", call.message.chat.id, call.message.message_id, reply_markup=markup)
+    bot.edit_message_text("Что выставить на продажу?", call.message.chat.id, call.message.message_id, reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("tradesel_"))
 def trade_select_price(call):
-    user_id = call.from_user.id
     item_name = call.data[9:]
-    qty = get_item_quantity(user_id, item_name)
-    if qty <= 0:
-        bot.answer_callback_query(call.id, "Предмет не найден!")
-        return
     bot.send_message(call.from_user.id, f"Введите цену для {item_name} (в рыбнетках):")
     bot.register_next_step_handler_by_chat_id(call.message.chat.id, lambda m: trade_set_price(m, item_name))
 
@@ -1533,7 +1373,7 @@ def trade_set_price(message, item_name):
     try:
         price = int(message.text.strip())
     except ValueError:
-        bot.send_message(user_id, "Неверная цена! Введите число.")
+        bot.send_message(user_id, "Неверная цена!")
         return
     if price < 1:
         bot.send_message(user_id, "Цена должна быть больше 0!")
@@ -1541,12 +1381,11 @@ def trade_set_price(message, item_name):
     item_type = ITEM_TYPES.get(item_name, "misc")
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("INSERT INTO trade_offers (seller_id, item_name, item_type, price, created_at, active) VALUES (?, ?, ?, ?, ?, 1)",
-              (user_id, item_name, item_type, price, datetime.now().isoformat()))
+    c.execute("INSERT INTO trade_offers (seller_id, item_name, item_type, price, created_at, active) VALUES (?, ?, ?, ?, ?, 1)", (user_id, item_name, item_type, price, datetime.now().isoformat()))
     conn.commit()
     conn.close()
     remove_from_inventory(user_id, item_name)
-    bot.send_message(user_id, f"✅ Оффер создан: {item_name} за 🐟{price}!\nИспользуйте /trade для просмотра.")
+    bot.send_message(user_id, f"✅ Оффер: {item_name} за 🐟{price}!")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("trade_list_"))
 def trade_list(call):
@@ -1554,8 +1393,7 @@ def trade_list(call):
     page = int(call.data.split("_")[2]) if "_" in call.data[11:] else 0
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT offer_id, seller_id, item_name, price FROM trade_offers WHERE active = 1 AND seller_id != ? ORDER BY created_at DESC LIMIT 10 OFFSET ?",
-              (user_id, page * 10))
+    c.execute("SELECT offer_id, item_name, price FROM trade_offers WHERE active = 1 AND seller_id != ? ORDER BY created_at DESC LIMIT 10 OFFSET ?", (user_id, page * 10))
     offers = c.fetchall()
     conn.close()
     if not offers:
@@ -1563,7 +1401,7 @@ def trade_list(call):
         return
     text = "📋 *Активные офферы*\n\n"
     markup = types.InlineKeyboardMarkup()
-    for offer_id, seller_id, item_name, price in offers:
+    for offer_id, item_name, price in offers:
         text += f"  {item_name} — 🐟{price}\n"
         markup.add(types.InlineKeyboardButton(f"Купить {item_name} — 🐟{price}", callback_data=f"tradebuy_{offer_id}"))
     nav = []
@@ -1583,7 +1421,7 @@ def trade_buy(call):
     c.execute("SELECT seller_id, item_name, item_type, price, active FROM trade_offers WHERE offer_id = ?", (offer_id,))
     row = c.fetchone()
     if not row or not row[4]:
-        bot.answer_callback_query(call.id, "Оффер не найден или уже куплен!")
+        bot.answer_callback_query(call.id, "Оффер не найден!")
         conn.close()
         return
     seller_id, item_name, item_type, price, _ = row
@@ -1591,8 +1429,7 @@ def trade_buy(call):
         bot.answer_callback_query(call.id, "Нельзя купить свой оффер!")
         conn.close()
         return
-    fishnets = get_fishnets(user_id)
-    if fishnets < price:
+    if get_fishnets(user_id) < price:
         bot.answer_callback_query(call.id, "Недостаточно рыбнеток!")
         conn.close()
         return
@@ -1622,10 +1459,9 @@ def trade_mine(call):
     text = "📦 *Мои офферы*\n\n"
     markup = types.InlineKeyboardMarkup()
     for offer_id, item_name, price, active in offers:
-        status = "✅" if active else "❌"
-        text += f"  {status} {item_name} — 🐟{price}\n"
+        text += f"  {'✅' if active else '❌'} {item_name} — 🐟{price}\n"
         if active:
-            markup.add(types.InlineKeyboardButton(f"Снять {item_name} — 🐟{price}", callback_data=f"tradecancel_{offer_id}"))
+            markup.add(types.InlineKeyboardButton(f"Снять {item_name}", callback_data=f"tradecancel_{offer_id}"))
     markup.add(types.InlineKeyboardButton("◀️ В меню биржи", callback_data="trade_back"))
     bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=markup)
 
@@ -1641,17 +1477,15 @@ def trade_cancel(call):
         bot.answer_callback_query(call.id, "Оффер не найден!")
         conn.close()
         return
-    item_name, item_type, _ = row
     c.execute("UPDATE trade_offers SET active = 0 WHERE offer_id = ?", (offer_id,))
     conn.commit()
     conn.close()
-    add_to_inventory(user_id, item_name, item_type)
-    bot.answer_callback_query(call.id, f"Оффер снят: {item_name} возвращён!")
+    add_to_inventory(user_id, row[0], row[1])
+    bot.answer_callback_query(call.id, f"Снято: {row[0]}!")
 
 @bot.callback_query_handler(func=lambda c: c.data == "trade_back")
 def trade_back(call):
-    user_id = call.from_user.id
-    text = "📦 *Биржа предметов*\n\n"
+    text = "📦 *Биржа*\n\n"
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("📤 Создать оффер", callback_data="trade_create"))
     markup.add(types.InlineKeyboardButton("📋 Активные офферы", callback_data="trade_list_0"))
@@ -1666,44 +1500,31 @@ def menu_faction(message):
     user_id = message.from_user.id
     player = get_player(user_id)
     if not player:
-        bot.send_message(user_id, "Вы не зарегистрированы. Напишите /start")
+        bot.send_message(user_id, "Напишите /start")
         return
-
-    current_faction = player[4]
-    rep = player[5]
-
     text = "🏛 *Фракции*\n\n"
     for fid, fdata in FACTIONS.items():
-        marker = " ✅" if current_faction == fid else ""
+        marker = " ✅" if player[5] == fid else ""
         text += f"*{fdata['name']}*{marker}\n  {fdata['desc']}\n"
-        if current_faction == fid:
-            text += f"  Ваша репутация: {rep}\n"
+        if player[5] == fid:
+            text += f"  Репутация: {player[6]}\n"
         text += "\n"
-
-    if current_faction:
-        text += "Вы уже состоите во фракции. Сменить фракцию можно, но репутация обнулится."
-    else:
-        text += "Выберите фракцию:"
-
     markup = types.InlineKeyboardMarkup()
     for fid, fdata in FACTIONS.items():
-        if current_faction == fid:
+        if player[5] == fid:
             markup.add(types.InlineKeyboardButton(f"🔄 Сменить на {fdata['name']}", callback_data=f"factionjoin_{fid}"))
         else:
             markup.add(types.InlineKeyboardButton(f"Присоединиться: {fdata['name']}", callback_data=f"factionjoin_{fid}"))
-
     bot.send_message(user_id, text, parse_mode='Markdown', reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("factionjoin_"))
 def faction_join(call):
-    user_id = call.from_user.id
     faction_id = call.data.split("_")[1]
     if faction_id not in FACTIONS:
         bot.answer_callback_query(call.id, "Фракция не найдена!")
         return
-    update_player(user_id, faction=faction_id, faction_rep=0)
-    bot.answer_callback_query(call.id, f"Вы вступили во фракцию: {FACTIONS[faction_id]['name']}!")
-    menu_faction(call.message)
+    update_player(call.from_user.id, faction=faction_id, faction_rep=0)
+    bot.answer_callback_query(call.id, f"Вступили: {FACTIONS[faction_id]['name']}!")
 
 # ==================== ГОЛОСОВАНИЕ ====================
 
@@ -1712,32 +1533,24 @@ def faction_join(call):
 def cmd_vote(message):
     user_id = message.from_user.id
     today = date.today().isoformat()
-
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("SELECT vote FROM votes WHERE user_id = ? AND date = ?", (user_id, today))
     existing = c.fetchone()
     conn.close()
-
     event = get_todays_event_proposal()
-    text = f"🗳 *Голосование за событие дня*\n\n"
-    text += f"📅 Предложение: {event['desc']}\n\n"
-
+    text = f"🗳 *Голосование*\n\n📅 {event['desc']}\n\n"
     active = get_active_event_text()
     if active:
-        text += f"✅ Уже активно: {active}\n\n"
-
+        text += f"✅ Активно: {active}\n\n"
     if existing:
-        text += f"Вы уже проголосовали: {existing[0].upper()}"
+        text += f"Вы проголосовали: {existing[0].upper()}"
         bot.send_message(user_id, text, parse_mode='Markdown')
         return
-
     text += "Голосуем?"
-
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("✅ За", callback_data="vote_yes"))
     markup.add(types.InlineKeyboardButton("❌ Против", callback_data="vote_no"))
-
     bot.send_message(user_id, text, parse_mode='Markdown', reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("vote_"))
@@ -1745,31 +1558,24 @@ def vote_callback(call):
     user_id = call.from_user.id
     vote = call.data.split("_")[1]
     today = date.today().isoformat()
-
-    if vote not in ("yes", "no"):
-        return
-
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     try:
-        c.execute("INSERT INTO votes (user_id, event_type, vote, date) VALUES (?, ?, ?, ?)",
-                  (user_id, "daily", vote, today))
+        c.execute("INSERT INTO votes (user_id, event_type, vote, date) VALUES (?, ?, ?, ?)", (user_id, "daily", vote, today))
         conn.commit()
     except sqlite3.IntegrityError:
-        bot.answer_callback_query(call.id, "Вы уже голосовали сегодня!")
+        bot.answer_callback_query(call.id, "Уже голосовали!")
         conn.close()
         return
     conn.close()
-
-    # Проверяем результат
     if check_vote_result():
         event = get_todays_event_proposal()
         activate_event(event["event_type"], event["effect"])
-        bot.answer_callback_query(call.id, f"Голос принят! Событие активировано: {event['desc']}")
-        bot.edit_message_text(f"✅ *Событие активировано!*\n{event['desc']}", call.message.chat.id, call.message.message_id, parse_mode='Markdown')
+        bot.answer_callback_query(call.id, f"Событие активировано: {event['desc']}")
+        bot.edit_message_text(f"✅ *Активировано!*\n{event['desc']}", call.message.chat.id, call.message.message_id, parse_mode='Markdown')
     else:
-        bot.answer_callback_query(call.id, "Голос принят! Спасибо.")
-        bot.edit_message_text(f"🗳 Ваш голос: {vote.upper()}\nРезультат будет подсчитан, когда наберётся минимум 3 голоса.", call.message.chat.id, call.message.message_id, parse_mode='Markdown')
+        bot.answer_callback_query(call.id, "Голос принят!")
+        bot.edit_message_text(f"🗳 Голос: {vote.upper()}\nНужно 3+ голоса.", call.message.chat.id, call.message.message_id, parse_mode='Markdown')
 
 # ==================== БРАКИ ====================
 
@@ -1781,14 +1587,13 @@ def menu_marry(message):
     if not seals:
         bot.send_message(user_id, "У вас нет тюленей!")
         return
-    count = get_seal_count(user_id)
-    if count >= MAX_SEALS:
-        bot.send_message(user_id, f"У вас уже максимум тюленей ({MAX_SEALS})! Брак невозможен.")
+    if get_seal_count(user_id) >= MAX_SEALS:
+        bot.send_message(user_id, f"Максимум {MAX_SEALS} тюленей!")
         return
     markup = types.InlineKeyboardMarkup()
     for s in seals:
         markup.add(types.InlineKeyboardButton(f"{s[2]} (ур.{s[9]})", callback_data=f"marrysel_{s[0]}"))
-    bot.send_message(user_id, "Выберите своего тюленя для брака:", reply_markup=markup)
+    bot.send_message(user_id, "Выберите тюленя для брака:", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("marrysel_"))
 def marry_select(call):
@@ -1800,10 +1605,9 @@ def marry_get_partner(message, seal1_id):
     user_id = message.from_user.id
     text = message.text.strip()
     if text.startswith("@"):
-        partner_username = text[1:]
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
-        c.execute("SELECT user_id FROM players WHERE username = ?", (partner_username,))
+        c.execute("SELECT user_id FROM players WHERE username = ?", (text[1:],))
         row = c.fetchone()
         conn.close()
         if not row:
@@ -1814,14 +1618,14 @@ def marry_get_partner(message, seal1_id):
         try:
             partner_id = int(text)
         except ValueError:
-            bot.send_message(user_id, "Неверный формат! Введите @username или числовой ID.")
+            bot.send_message(user_id, "Неверный формат!")
             return
     if partner_id == user_id:
-        bot.send_message(user_id, "Нельзя заключить брак с самим собой!")
+        bot.send_message(user_id, "Нельзя с самим собой!")
         return
     partner_seals = get_player_seals(partner_id)
     if not partner_seals:
-        bot.send_message(user_id, "У этого игрока нет тюленей!")
+        bot.send_message(user_id, "У игрока нет тюленей!")
         return
     markup = types.InlineKeyboardMarkup()
     for s in partner_seals:
@@ -1832,55 +1636,48 @@ def marry_get_partner(message, seal1_id):
 def marry_do(call):
     user_id = call.from_user.id
     parts = call.data.split("_")
-    seal1_id = int(parts[1])
-    seal2_id = int(parts[2])
-    partner_id = int(parts[3])
-    seal1 = get_seal(seal1_id)
-    seal2 = get_seal(seal2_id)
+    seal1_id, seal2_id, partner_id = int(parts[1]), int(parts[2]), int(parts[3])
+    seal1, seal2 = get_seal(seal1_id), get_seal(seal2_id)
     if not seal1 or not seal2:
         bot.answer_callback_query(call.id, "Тюлень не найден!")
         return
-    count = get_seal_count(user_id)
-    if count >= MAX_SEALS:
+    if get_seal_count(user_id) >= MAX_SEALS:
         bot.answer_callback_query(call.id, f"Максимум {MAX_SEALS} тюленей!")
         return
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT * FROM marriages WHERE (seal1_id = ? AND seal2_id = ?) OR (seal1_id = ? AND seal2_id = ?)",
-              (seal1_id, seal2_id, seal2_id, seal1_id))
+    c.execute("SELECT * FROM marriages WHERE (seal1_id=? AND seal2_id=?) OR (seal1_id=? AND seal2_id=?)", (seal1_id, seal2_id, seal2_id, seal1_id))
     if c.fetchone():
-        bot.answer_callback_query(call.id, "Эти тюлени уже в браке!")
+        bot.answer_callback_query(call.id, "Уже в браке!")
         conn.close()
         return
-    c.execute("INSERT INTO marriages (seal1_id, seal2_id, player1_id, player2_id, created_at) VALUES (?, ?, ?, ?, ?)",
-              (seal1_id, seal2_id, user_id, partner_id, datetime.now().isoformat()))
+    c.execute("INSERT INTO marriages (seal1_id, seal2_id, player1_id, player2_id, created_at) VALUES (?,?,?,?,?)", (seal1_id, seal2_id, user_id, partner_id, datetime.now().isoformat()))
     conn.commit()
     conn.close()
-    msg = f"💍 Брак заключён! {seal1[2]} ❤️ {seal2[2]}\n"
+    msg = f"💍 Брак! {seal1[2]} ❤️ {seal2[2]}\n"
     if random.random() < 0.5:
         baby_name = random.choice(["Малыш", "Кроха", "Пузырь", "Лапик", "Шлёпик", "Ням"])
         baby_str = (seal1[7] + seal2[7]) // 4 + random.randint(1, 3)
         baby_def = (seal1[8] + seal2[8]) // 4 + random.randint(0, 2)
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
-        c.execute("INSERT INTO seals (owner_id, name, health, max_health, mood, satiety, strength, defense, level, exp, is_baby, born_at) VALUES (?, ?, 60, 60, 70, 70, ?, ?, 1, 0, 1, ?)",
-                  (user_id, baby_name, baby_str, baby_def, datetime.now().isoformat()))
+        c.execute("INSERT INTO seals (owner_id, name, health, max_health, mood, satiety, strength, defense, level, exp, is_baby, born_at) VALUES (?,?,?,?,?,?,?,?,?,?,1,?)", (user_id, baby_name, 60, 60, 70, 70, baby_str, baby_def, 1, 0, datetime.now().isoformat()))
         conn.commit()
         conn.close()
-        msg += f"🍼 Родился тюленёнок — {baby_name}! Сила: {baby_str}, Защита: {baby_def}"
+        msg += f"🍼 Тюленёнок — {baby_name}! Сила: {baby_str}, Защита: {baby_def}"
     else:
-        msg += "Тюленёнок не появился... Может быть в следующий раз!"
+        msg += "Тюленёнок не появился..."
     bot.edit_message_text(msg, call.message.chat.id, call.message.message_id, parse_mode='Markdown')
 
 # ==================== ЕЖЕДНЕВНЫЕ ЗАДАНИЯ ====================
 
 QUEST_TEMPLATES = [
-    {"type": "play", "target": 3, "reward": 30, "desc": "Поиграть с тюленем 3 раза"},
-    {"type": "feed", "target": 3, "reward": 30, "desc": "Покормить тюленя 3 раза"},
+    {"type": "play", "target": 3, "reward": 30, "desc": "Поиграть 3 раза"},
+    {"type": "feed", "target": 3, "reward": 30, "desc": "Покормить 3 раза"},
     {"type": "battle", "target": 1, "reward": 40, "desc": "Победить 1 босса"},
     {"type": "dungeon", "target": 1, "reward": 50, "desc": "Пройти 1 подземелье"},
-    {"type": "shop", "target": 1, "reward": 20, "desc": "Купить 1 предмет в магазине"},
-    {"type": "work", "target": 1, "reward": 35, "desc": "Отправить тюленя на работу 1 раз"},
+    {"type": "shop", "target": 1, "reward": 20, "desc": "Купить 1 предмет"},
+    {"type": "work", "target": 1, "reward": 35, "desc": "Отправить на работу"},
     {"type": "craft", "target": 1, "reward": 25, "desc": "Скрафтить 1 предмет"},
     {"type": "fish", "target": 1, "reward": 25, "desc": "Поймать 1 рыбу"},
 ]
@@ -1894,10 +1691,8 @@ def generate_daily_quests(user_id):
         conn.close()
         return
     c.execute("DELETE FROM daily_quests WHERE user_id = ? AND date != ?", (user_id, today))
-    chosen = random.sample(QUEST_TEMPLATES, 3)
-    for q in chosen:
-        c.execute("INSERT INTO daily_quests (user_id, quest_type, quest_target, quest_progress, quest_reward, date, claimed) VALUES (?, ?, ?, 0, ?, ?, 0)",
-                  (user_id, q["type"], q["target"], q["reward"], today))
+    for q in random.sample(QUEST_TEMPLATES, 3):
+        c.execute("INSERT INTO daily_quests (user_id, quest_type, quest_target, quest_progress, quest_reward, date, claimed) VALUES (?,?,?,?,0,?,?,0)", (user_id, q["type"], q["target"], q["reward"], today))
     conn.commit()
     conn.close()
 
@@ -1905,14 +1700,10 @@ def update_quest_progress(user_id, quest_type, amount):
     today = date.today().isoformat()
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT quest_id, quest_progress, quest_target FROM daily_quests WHERE user_id = ? AND quest_type = ? AND date = ? AND claimed = 0",
-              (user_id, quest_type, today))
-    rows = c.fetchall()
-    for row in rows:
-        quest_id, progress, target = row
+    c.execute("SELECT quest_id, quest_progress, quest_target FROM daily_quests WHERE user_id = ? AND quest_type = ? AND date = ? AND claimed = 0", (user_id, quest_type, today))
+    for quest_id, progress, target in c.fetchall():
         if progress < target:
-            new_progress = min(target, progress + amount)
-            c.execute("UPDATE daily_quests SET quest_progress = ? WHERE quest_id = ?", (new_progress, quest_id))
+            c.execute("UPDATE daily_quests SET quest_progress = ? WHERE quest_id = ?", (min(target, progress + amount), quest_id))
     conn.commit()
     conn.close()
 
@@ -1932,22 +1723,22 @@ def menu_quests(message):
     generate_daily_quests(user_id)
     quests = get_daily_quests(user_id)
     if not quests:
-        bot.send_message(user_id, "Задания не сгенерированы. Попробуйте позже.")
+        bot.send_message(user_id, "Задания не сгенерированы.")
         return
     text = "📋 *Ежедневные задания*\n\n"
     markup = types.InlineKeyboardMarkup()
     quest_descs = {q["type"]: q["desc"] for q in QUEST_TEMPLATES}
     for q in quests:
-        qid, uid, qtype, qtarget, qprogress, qreward, qdate, claimed = q
+        qid, _, qtype, qtarget, qprogress, qreward, _, claimed = q
         desc = quest_descs.get(qtype, qtype)
         status = f"{qprogress}/{qtarget}"
         if claimed:
-            text += f"  ✅ {desc} — {status} (награда 🐟{qreward}) — получено\n"
+            text += f"  ✅ {desc} — {status} (🐟{qreward}) — получено\n"
         elif qprogress >= qtarget:
-            text += f"  🎁 {desc} — {status} (награда 🐟{qreward}) — готово!\n"
-            markup.add(types.InlineKeyboardButton(f"Забрать 🐟{qreward} ({desc})", callback_data=f"qclaim_{qid}"))
+            text += f"  🎁 {desc} — {status} (🐟{qreward}) — готово!\n"
+            markup.add(types.InlineKeyboardButton(f"Забрать 🐟{qreward}", callback_data=f"qclaim_{qid}"))
         else:
-            text += f"  ⬜ {desc} — {status} (награда 🐟{qreward})\n"
+            text += f"  ⬜ {desc} — {status} (🐟{qreward})\n"
     if markup.keyboard:
         bot.send_message(user_id, text, parse_mode='Markdown', reply_markup=markup)
     else:
@@ -1962,21 +1753,18 @@ def quest_claim(call):
     c.execute("SELECT * FROM daily_quests WHERE quest_id = ? AND claimed = 0", (quest_id,))
     row = c.fetchone()
     if not row:
-        bot.answer_callback_query(call.id, "Задание уже получено или не найдено!")
+        bot.answer_callback_query(call.id, "Уже получено!")
         conn.close()
         return
-    qtarget = row[3]
-    qprogress = row[4]
-    qreward = row[5]
-    if qprogress < qtarget:
-        bot.answer_callback_query(call.id, "Задание ещё не выполнено!")
+    if row[4] < row[3]:
+        bot.answer_callback_query(call.id, "Не выполнено!")
         conn.close()
         return
     c.execute("UPDATE daily_quests SET claimed = 1 WHERE quest_id = ?", (quest_id,))
     conn.commit()
     conn.close()
-    add_fishnets(user_id, qreward)
-    bot.answer_callback_query(call.id, f"Получено 🐟{qreward}!")
+    add_fishnets(user_id, row[5])
+    bot.answer_callback_query(call.id, f"Получено 🐟{row[5]}!")
 
 # ==================== ФОНОВЫЕ ПОТОКИ ====================
 
@@ -1986,17 +1774,12 @@ def stats_decay():
         try:
             conn = sqlite3.connect(DB_PATH, timeout=10)
             c = conn.cursor()
-            c.execute("SELECT seal_id, health, mood, satiety, max_health FROM seals")
-            seals = c.fetchall()
-            for s in seals:
-                seal_id, hp, mood, satiety, max_hp = s
+            c.execute("SELECT seal_id, health, mood, satiety FROM seals")
+            for seal_id, hp, mood, satiety in c.fetchall():
                 new_mood = max(0, mood - random.randint(3, 8))
                 new_satiety = max(0, satiety - random.randint(5, 10))
-                new_hp = hp
-                if new_satiety < 20:
-                    new_hp = max(1, hp - random.randint(3, 8))
-                c.execute("UPDATE seals SET mood = ?, satiety = ?, health = ? WHERE seal_id = ?",
-                          (new_mood, new_satiety, new_hp, seal_id))
+                new_hp = max(1, hp - random.randint(3, 8)) if new_satiety < 20 else hp
+                c.execute("UPDATE seals SET mood=?, satiety=?, health=? WHERE seal_id=?", (new_mood, new_satiety, new_hp, seal_id))
             conn.commit()
             conn.close()
         except Exception:
@@ -2009,22 +1792,17 @@ def health_regen():
             conn = sqlite3.connect(DB_PATH, timeout=10)
             c = conn.cursor()
             c.execute("SELECT seal_id, health, max_health FROM seals WHERE health < max_health")
-            seals = c.fetchall()
-            for s in seals:
-                seal_id, hp, max_hp = s
-                new_hp = min(max_hp, hp + 25)
-                c.execute("UPDATE seals SET health = ? WHERE seal_id = ?", (new_hp, seal_id))
+            for seal_id, hp, max_hp in c.fetchall():
+                c.execute("UPDATE seals SET health = ? WHERE seal_id = ?", (min(max_hp, hp + 25), seal_id))
             conn.commit()
             conn.close()
         except Exception:
             pass
 
-decay_thread = threading.Thread(target=stats_decay, daemon=True)
-decay_thread.start()
-regen_thread = threading.Thread(target=health_regen, daemon=True)
-regen_thread.start()
+threading.Thread(target=stats_decay, daemon=True).start()
+threading.Thread(target=health_regen, daemon=True).start()
 
-# ==================== КОМАНДЫ В МЕНЮ (ПОДСКАЗКИ) ====================
+# ==================== КОМАНДЫ В МЕНЮ ====================
 
 bot.set_my_commands([
     types.BotCommand("start", "Регистрация / Главное меню"),
@@ -2032,18 +1810,18 @@ bot.set_my_commands([
     types.BotCommand("profile", "Профиль игрока"),
     types.BotCommand("gallery", "Галерея тюленей"),
     types.BotCommand("setphoto", "Установить фото тюленя"),
-    types.BotCommand("shop", "Магазин — еда, аптечки, аксессуары"),
+    types.BotCommand("shop", "Магазин"),
     types.BotCommand("craft", "Крафт оружия и брони"),
-    types.BotCommand("trade", "Биржа предметов между игроками"),
-    types.BotCommand("battle", "Бой с боссом (даёт ресурсы)"),
+    types.BotCommand("trade", "Биржа предметов"),
+    types.BotCommand("battle", "Бой с боссом"),
     types.BotCommand("dungeon", "Подземелье (5 этажей)"),
     types.BotCommand("work", "Отправить тюленя на работу"),
-    types.BotCommand("fish", "Мини-игра «Рыбалка»"),
-    types.BotCommand("vote", "Голосование за событие дня"),
+    types.BotCommand("fish", "Мини-игра Рыбалка"),
+    types.BotCommand("vote", "Голосование за событие"),
     types.BotCommand("faction", "Фракции и репутация"),
     types.BotCommand("marry", "Брак тюленей (макс. 5)"),
     types.BotCommand("quests", "Ежедневные задания"),
-    types.BotCommand("leaderboard", "Таблица лидеров по уровню"),
+    types.BotCommand("leaderboard", "Таблица лидеров"),
 ])
 
 # ==================== ЗАПУСК ====================
