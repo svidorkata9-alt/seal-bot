@@ -1079,13 +1079,14 @@ def sell_menu(call):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("sellitem_"))
 def sell_do(call):
-    uid = call.from_user.id; name = call.data[10:]
+    uid = call.from_user.id; name = call.data[9:]
     qty = get_item_qty(uid, name)
     if qty <= 0: bot.answer_callback_query(call.id, "Нет!"); return
     sp = get_sell_price(name)
     if sp <= 0: bot.answer_callback_query(call.id, "Нельзя продать!"); return
     remove_from_inv(uid, name, 1); add_fishnets(uid, sp)
     bot.answer_callback_query(call.id, f"Продано {name} за 🐟{sp}!")
+
 
 @bot.callback_query_handler(func=lambda c: c.data == "chestmenu")
 def chest_menu(call):
@@ -1774,7 +1775,7 @@ def dng_atk(call):
         if prg > 0: shp = min(eh, shp + prg)
     decrement_potion_use(sid)
     if mon["hp"] <= 0:
-        update_seal(sid, health=max(1, shp)); log.append("\n✅ Повержен!")
+        update_seal(sid, health=min(seal[4], max(1, shp))); log.append("\n✅ Повержен!")
         d = process_drops(uid, mon.get("drops", {}))
         if d: log.append(f"📦 {', '.join(d)}")
         conn = sqlite3.connect(DB_PATH); c = conn.cursor()
