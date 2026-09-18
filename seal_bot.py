@@ -1330,15 +1330,26 @@ def seal_selected(call, sid=None):
             t += f"\n🍼 Тюленёнок! Вырастет через {max(0, days_left)} дн.\n"
         except: t += "\n🍼 Тюленёнок!\n"
     m = types.InlineKeyboardMarkup(row_width=2)
-    m.add(types.InlineKeyboardButton("🍖 Кормить", callback_data=f"feed_{sid}"),
-          types.InlineKeyboardButton("🎾 Играть", callback_data=f"play_{sid}"))
-    m.add(types.InlineKeyboardButton("💊 Лечить", callback_data=f"heal_{sid}"),
-          types.InlineKeyboardButton("👕 Экип", callback_data=f"equip_{sid}"))
-    m.add(types.InlineKeyboardButton("👕 Снять", callback_data=f"unequip_{sid}"),
-          types.InlineKeyboardButton("🧪 Зелье", callback_data=f"spot_{sid}"),
-    m.add(types.InlineKeyboardButton("📸 Фото", callback_data=f"sphoto_{sid}"),
-          types.InlineKeyboardButton("✏️ Имя", callback_data=f"rename_{sid}"),
-    m.add(types.InlineKeyboardButton("◀️ Назад", callback_data="back_main"))
+    m.add(
+    types.InlineKeyboardButton("🍖 Кормить", callback_data=f"feed_{sid}"),
+    types.InlineKeyboardButton("🎾 Играть", callback_data=f"play_{sid}")
+)
+m.add(
+    types.InlineKeyboardButton("💊 Лечить", callback_data=f"heal_{sid}"),
+    types.InlineKeyboardButton("👕 Экип", callback_data=f"equip_{sid}")
+)
+m.add(
+    types.InlineKeyboardButton("👕 Снять", callback_data=f"unequip_{sid}"),
+    types.InlineKeyboardButton("🧪 Зелье", callback_data=f"spot_{sid}")
+)
+m.add(
+    types.InlineKeyboardButton("📸 Фото", callback_data=f"sphoto_{sid}"),
+    types.InlineKeyboardButton("✏️ Имя", callback_data=f"rename_{sid}")
+)
+m.add(
+    types.InlineKeyboardButton("◀️ Назад", callback_data="back_main")
+)
+
     cid = call.message.chat.id; mid = call.message.message_id; pp = seal[20]
     if pp and os.path.exists(pp):
         try: bot.delete_message(cid, mid)
