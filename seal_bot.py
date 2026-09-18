@@ -888,12 +888,14 @@ def generate_daily_quests(uid):
     conn.commit(); conn.close()
 
 def update_quest_progress(uid, qt, amt=1):
+    generate_daily_quests(uid)  # ИСПРАВЛЕНО: гарантируем, что квесты на сегодня созданы
     today = date.today().isoformat()
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("SELECT quest_id,quest_progress,quest_target FROM daily_quests WHERE user_id=? AND quest_type=? AND date=? AND claimed=0", (uid, qt, today))
     for qid, prog, targ in c.fetchall():
         if prog < targ: c.execute("UPDATE daily_quests SET quest_progress=? WHERE quest_id=?", (min(targ, prog + amt), qid))
     conn.commit(); conn.close()
+
 
 def get_daily_quests(uid):
     today = date.today().isoformat()
