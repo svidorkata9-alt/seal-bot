@@ -2360,10 +2360,11 @@ def clan_dng_atk(call):
         target = random.choice(all_seals)
         old_hp = seal_hp[target[0]]
         new_hp = max(1, old_hp - dm)
-        actual_dm = old_hp - new_hp  # ИСПРАВЛЕНО: реальный урон
+        actual_dm = old_hp - new_hp
         seal_hp[target[0]] = new_hp; update_seal(target[0], health=new_hp)
-        thp -= actual_dm  # ИСПРАВЛЕНО
-        log.append(f"{mon['name']} →{target[2]} на {dm} (осталось {max(0, thp)}❤️)")
+        thp -= actual_dm
+        log.append(f"{mon['name']} →{target[2]} на {actual_dm} (осталось {max(0, thp)}❤️)")
+
 
     if mon["hp"] <= 0:
         log.append("\n✅ Монстр повержен!")
