@@ -5,7 +5,7 @@ from datetime import datetime, date, timedelta
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "PLACEHOLDER_TOKEN")
 bot = telebot.TeleBot(TOKEN)
-DB_PATH = "seal_life.db"
+DB_PATH = "/data/seal_life.db"
 BACKUP_DIR = "backups"
 MAX_SEALS = 5
 FISHING_COOLDOWN_MIN = 10
@@ -1265,7 +1265,7 @@ def proc_seal_photo(message, sid):
     if not message.photo: bot.send_message(chat_id, "Не фото!"); return
     try:
         fi = bot.get_file(message.photo[-1].file_id); dl = bot.download_file(fi.file_path)
-        os.makedirs("photos", exist_ok=True); p = f"photos/seal_{sid}.jpg"
+        os.makedirs(PHOTOS_DIR, exist_ok=True); p = os.path.join(PHOTOS_DIR, f"seal_{sid}.jpg")
         with open(p, 'wb') as f: f.write(dl)
         update_seal(sid, photo_path=p); bot.send_message(chat_id, "✅ Фото обновлено!")
     except Exception as e: bot.send_message(chat_id, f"❌ {e}")
@@ -1334,10 +1334,11 @@ def seal_selected(call, sid=None):
           types.InlineKeyboardButton("🎾 Играть", callback_data=f"play_{sid}"))
     m.add(types.InlineKeyboardButton("💊 Лечить", callback_data=f"heal_{sid}"),
           types.InlineKeyboardButton("👕 Экип", callback_data=f"equip_{sid}"))
-    m.add(types.InlineKeyboardButton("🧪 Зелье", callback_data=f"spot_{sid}"),
-          types.InlineKeyboardButton("📸 Фото", callback_data=f"sphoto_{sid}"))
-    m.add(types.InlineKeyboardButton("✏️ Имя", callback_data=f"rename_{sid}"),
-          types.InlineKeyboardButton("◀️ Назад", callback_data="back_main"))
+    m.add(types.InlineKeyboardButton("👕 Снять", callback_data=f"unequip_{sid}"),
+          types.InlineKeyboardButton("🧪 Зелье", callback_data=f"spot_{sid}"),
+    m.add(types.InlineKeyboardButton("📸 Фото", callback_data=f"sphoto_{sid}"),
+          types.InlineKeyboardButton("✏️ Имя", callback_data=f"rename_{sid}"),
+    m.add(types.InlineKeyboardButton("◀️ Назад", callback_data="back_main"))
     cid = call.message.chat.id; mid = call.message.message_id; pp = seal[20]
     if pp and os.path.exists(pp):
         try: bot.delete_message(cid, mid)
@@ -1462,6 +1463,54 @@ def seal_do_equip(call):
     pl = get_player(uid)
     if pl and pl[5] == "fashion" and it == "accessory": add_faction_rep(uid, 2)
     bot.answer_callback_query(call.id, f"Надето: {name}"); seal_selected(call, sid)
+@bot.callback_query_handler(func=lambda c: c.data.startswith("unequip_"))
+def seal_unequip_menu(call):
+    uid = call.from_user.id; sid = int(call.data.split("_")[1])
+    seal = get_seal(sid)
+    if not seal: return
+    slots = {
+        "equipped_weapon": ("⚔️ Оружие", 13),
+        "equipped_armor": ("🛡️ Броня", 14),
+        "equipped_helmet": ("🪖 Шлем", 15),
+        "equipped_shield": ("🛡️ Щит", 16),
+        "equipped_accessory": ("🎀 Аксессуар", 17),
+        "equipped_artifact": ("✨ Артефакт", 22),
+    }
+    m = types.InlineKeyboardMarkup()
+    found = False
+    for col, (label, idx) in slots.items():
+        val = seal[idx] if idx < len(seal) else None
+        if val:
+            found = True
+            m.add(types.InlineKeyboardButton(f"Снять {label}: {val}", callback_data=f"unq_{sid}_{col}"))
+    if not found:
+        bot.answer_callback_query(call.id, "Нечего снимать!")
+        return
+    m.add(types.InlineKeyboardButton("◀️", callback_data=f"sinfo_{sid}"))
+    try:
+        bot.edit_message_text("👕 Что снять?", call.message.chat.id, call.message.message_id, reply_markup=m)
+    except:
+        try: bot.delete_message(call.message.chat.id, call.message.message_id)
+        except: pass
+        bot.send_message(call.message.chat.id, "👕 Что снять?", reply_markup=m)
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("unq_"))
+def seal_do_unequip(call):
+    uid = call.from_user.id; p = call.data.split("_"); sid = int(p[1]); col = p[2]
+    seal = get_seal(sid)
+    if not seal: return
+    slot_map = {
+        "equipped_weapon": 13, "equipped_armor": 14, "equipped_helmet": 15,
+        "equipped_shield": 16, "equipped_accessory": 17, "equipped_artifact": 22,
+    }
+    idx = slot_map.get(col)
+    if idx is None: bot.answer_callback_query(call.id, "Ошибка!"); return
+    item_name = seal[idx] if idx < len(seal) else None
+    if not item_name: bot.answer_callback_query(call.id, "Уже пусто!"); return
+    update_seal(sid, **{col: None})
+    add_to_inv(uid, item_name, ITEM_TYPES.get(item_name, "armor"), 1)
+    bot.answer_callback_query(call.id, f"Снято: {item_name}")
+    seal_selected(call, sid)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("spot_"))
 def seal_potion_menu(call):
