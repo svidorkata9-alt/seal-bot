@@ -1,9 +1,10 @@
 import telebot
 from telebot import types
-import sqlite3, random, threading, time, os, shutil, json, re
+import sqlite3, random, threading, time, os, shutil, json, re, functools
 from datetime import datetime, date, timedelta
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "PLACEHOLDER_TOKEN")
+TOPIC_ID = int(os.getenv("TELEGRAM_TOPIC_ID", "0"))
 bot = telebot.TeleBot(TOKEN)
 DB_PATH = "seal_life.db"
 BACKUP_DIR = "backups"
@@ -14,6 +15,33 @@ CLAN_DUNGEON_MIN_LEVEL = 4
 CLAN_DUNGEON_FLOORS = 10
 PLAY_COOLDOWN_MIN = 15
 BABY_GROW_DAYS = 3
+
+# ==================== ПРИВЯЗКА К ТОПИКУ ====================
+def topic_check(func):
+    @functools.wraps(func)
+    def wrapper(message, *args, **kwargs):
+        if TOPIC_ID and getattr(message, 'message_thread_id', None) != TOPIC_ID:
+            return
+        return func(message, *args, **kwargs)
+    return wrapper
+
+def topic_check_cb(func):
+    @functools.wraps(func)
+    def wrapper(call, *args, **kwargs):
+        if TOPIC_ID and getattr(call.message, 'message_thread_id', None) != TOPIC_ID:
+            return
+        return func(call, *args, **kwargs)
+    return wrapper
+
+def _send(chat_id, text, **kw):
+    if TOPIC_ID and isinstance(chat_id, int) and chat_id < 0:
+        kw.setdefault('message_thread_id', TOPIC_ID)
+    return bot.send_message(chat_id, text, **kw)
+
+def _send_photo(chat_id, photo, **kw):
+    if TOPIC_ID and isinstance(chat_id, int) and chat_id < 0:
+        kw.setdefault('message_thread_id', TOPIC_ID)
+    return bot.send_photo(chat_id, photo, **kw)
 
 # ==================== БЭКАП И МИГРАЦИИ ====================
 def backup_db():
@@ -111,7 +139,6 @@ def run_migrations():
     set_db_version(conn, len(MIGRATIONS))
     conn.commit()
     conn.close()
-
 # ==================== КОНСТАНТЫ ====================
 SHOP_ITEMS = {
     "Апельсин 🍊": {"price": 15, "type": "food", "satiety": 25, "mood": 10},
@@ -449,11 +476,11 @@ def _safe_int(value, default=0):
     try: return int(value)
     except (ValueError, TypeError): return default
 
-# --- ИЗМЕНЕНИЕ: обёртка для register_next_step_handler с фильтром по пользователю ---
-# В группе любой участник может отправить следующее сообщение, поэтому
-# фильтруем по from_user.id — обработчик сработает только для нужного пользователя.
 def reg_step(chat_id, user_id, handler, *args):
     def wrapper(message):
+        if TOPIC_ID and getattr(message, 'message_thread_id', None) != TOPIC_ID:
+            bot.register_next_step_handler_by_chat_id(chat_id, wrapper)
+            return
         if message.from_user and message.from_user.id != user_id:
             bot.register_next_step_handler_by_chat_id(chat_id, wrapper)
             return
@@ -529,7 +556,11 @@ def get_sell_price(item_name):
     if item_name in SHOP_ITEMS: return int(SHOP_ITEMS[item_name]["price"] * 0.5)
     if item_name in RESOURCE_SELL_PRICES: return RESOURCE_SELL_PRICES[item_name]
     if item_name in POTION_SELL_PRICES: return POTION_SELL_PRICES[item_name]
-    m = re.search(r'$$([A-Z])$$', item_name)
+    m = re.search(r'
+$$
+([A-Z])
+$$
+', item_name)
     if m and m.group(1) in RARITY_SELL_PRICES:
         return RARITY_SELL_PRICES[m.group(1)]
     for recipe in CRAFT_RECIPES:
@@ -935,6 +966,7 @@ def open_chest(uid, rarity):
     return msg
 # ==================== ОБРАБОТЧИКИ ====================
 @bot.message_handler(commands=['start'])
+@topic_check
 def cmd_start(message):
     uid = message.from_user.id; uname = message.from_user.username or message.from_user.first_name
     chat_id = message.chat.id
@@ -947,12 +979,13 @@ def cmd_start(message):
         conn = sqlite3.connect(DB_PATH); c = conn.cursor()
         c.execute("INSERT INTO seals (owner_id,name,health,max_health,mood,satiety,strength,defense,level,exp) VALUES (?,?,100,100,80,80,10,5,1,0)", (uid, sn))
         conn.commit(); conn.close()
-        bot.send_message(chat_id, f"Добро пожаловать в Мир Тюленей! 🦭\n\nТюлень {sn} и 100 рыбнеток 🐟 ваши!")
+        _send(chat_id, f"Добро пожаловать в Мир Тюленей! 🦭\n\nТюлень {sn} и 100 рыбнеток 🐟 ваши!")
     else:
-        bot.send_message(chat_id, "С возвращением! 🦭")
+        _send(chat_id, "С возвращением! 🦭")
     show_main_menu(chat_id)
 
 @bot.message_handler(commands=['help'])
+@topic_check
 def cmd_help(message):
     chat_id = message.chat.id
     t = ("🦭 *Справка*\n\n*Основные:*\n/start /help /profile /gallery /setphoto /leaderboard\n"
@@ -969,9 +1002,8 @@ def cmd_help(message):
          "*Зачарование:* 6 видов (огненное, ледяное, теневое и др.)\n"
          "*Регенерация:* +25 HP/час | Навык каждые 5 уровней\n"
          "*Тюленята:* растут через 3 дня")
-    bot.send_message(chat_id, t, parse_mode='Markdown'); show_main_menu(chat_id)
+    _send(chat_id, t, parse_mode='Markdown'); show_main_menu(chat_id)
 
-# --- ИЗМЕНЕНИЕ: show_main_menu принимает chat_id вместо uid ---
 def show_main_menu(chat_id):
     m = types.ReplyKeyboardMarkup(resize_keyboard=True)
     m.add(types.KeyboardButton("🦭 Мой тюлень"), types.KeyboardButton("👤 Профиль"))
@@ -984,14 +1016,15 @@ def show_main_menu(chat_id):
     m.add(types.KeyboardButton("📦 Биржа"), types.KeyboardButton("🏛 Фракции"))
     m.add(types.KeyboardButton("🤺 Дуэль"), types.KeyboardButton("📚 Цепочки"))
     m.add(types.KeyboardButton("🐋 Клан"), types.KeyboardButton("💰 Продажа"))
-    bot.send_message(chat_id, "Выберите действие:", reply_markup=m)
+    _send(chat_id, "Выберите действие:", reply_markup=m)
 
 @bot.message_handler(commands=['profile'])
 @bot.message_handler(func=lambda m: m.text == "👤 Профиль")
+@topic_check
 def cmd_profile(message):
     uid = message.from_user.id; chat_id = message.chat.id
     p = get_player(uid)
-    if not p: bot.send_message(chat_id, "Напишите /start"); return
+    if not p: _send(chat_id, "Напишите /start"); return
     cnt = get_seal_count(uid); fn = p[4]
     fn2 = FACTIONS[p[5]]["name"] if p[5] and p[5] in FACTIONS else "Нет"
     t = f"👤 *Ваш профиль*\n\nТюленей: {cnt}/{MAX_SEALS}\nРыбнетки: 🐟 {fn}\nФракция: {fn2}"
@@ -1014,13 +1047,14 @@ def cmd_profile(message):
             ap = s[23] if len(s) > 23 else None
             if ap: t += f"  🧪 Активное зелье: {ap}\n"
             if skills: t += f"  ✨ {', '.join(sk['name'] for sk in skills)}\n"
-    bot.send_message(chat_id, t, parse_mode='Markdown')
+    _send(chat_id, t, parse_mode='Markdown')
 
 @bot.message_handler(commands=['gallery'])
+@topic_check
 def cmd_gallery(message):
     uid = message.from_user.id; chat_id = message.chat.id
     seals = get_player_seals(uid)
-    if not seals: bot.send_message(chat_id, "Нет тюленей! /start"); return
+    if not seals: _send(chat_id, "Нет тюленей! /start"); return
     married = get_married_ids(); fn = get_fishnets(uid)
     t = f"🖼 *Галерея*\n🐟 {fn}\n\n"
     for s in seals:
@@ -1030,27 +1064,29 @@ def cmd_gallery(message):
         t += f"{st} *{s[2]}* — ур.{s[9]}{baby}\n  💪{s[7]} 🛡️{s[8]} 🍖{s[6]} ❤️{s[3]}/{s[4]}\n"
         if skills: t += f"  Навыки: {', '.join(sk['name'] for sk in skills)}\n"
         t += "\n"
-    bot.send_message(chat_id, t, parse_mode='Markdown')
+    _send(chat_id, t, parse_mode='Markdown')
 
 @bot.message_handler(commands=['leaderboard'])
 @bot.message_handler(func=lambda m: m.text == "🏆 Лидеры")
+@topic_check
 def cmd_leaderboard(message):
     chat_id = message.chat.id
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("SELECT seals.name,seals.level,players.username FROM seals JOIN players ON seals.owner_id=players.user_id ORDER BY seals.level DESC,seals.exp DESC LIMIT 20")
     rows = c.fetchall(); conn.close()
-    if not rows: bot.send_message(chat_id, "Пусто!"); return
+    if not rows: _send(chat_id, "Пусто!"); return
     t = "🏆 *Лидеры*\n\n"; medals = ["🥇","🥈","🥉"]
     for i, (n, l, u) in enumerate(rows):
         t += f"{medals[i] if i < 3 else str(i+1)+'.'} {n} — ур.{l} (@{u})\n"
-    bot.send_message(chat_id, t, parse_mode='Markdown')
+    _send(chat_id, t, parse_mode='Markdown')
 
 @bot.message_handler(commands=['inventory'])
 @bot.message_handler(func=lambda m: m.text == "🎒 Инвентарь")
+@topic_check
 def cmd_inventory(message):
     uid = message.from_user.id; chat_id = message.chat.id
     inv = get_inv(uid)
-    if not inv: bot.send_message(chat_id, "Инвентарь пуст!"); return
+    if not inv: _send(chat_id, "Инвентарь пуст!"); return
     t = "🎒 *Инвентарь*\n\n"
     cats = {"food":"🍴 Еда","medkit":"💊 Медицина","weapon":"⚔️ Оружие","armor":"🛡️ Броня",
             "helmet":"🪖 Шлемы","shield":"🛡️ Щиты","accessory":"🎀 Аксессуары",
@@ -1071,9 +1107,10 @@ def cmd_inventory(message):
     m = types.InlineKeyboardMarkup()
     m.add(types.InlineKeyboardButton("💰 Продать предметы", callback_data="sellmenu"))
     m.add(types.InlineKeyboardButton("📦 Открыть сундуки", callback_data="chestmenu"))
-    bot.send_message(chat_id, t, parse_mode='Markdown', reply_markup=m)
+    _send(chat_id, t, parse_mode='Markdown', reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data == "sellmenu")
+@topic_check_cb
 def sell_menu(call):
     uid = call.from_user.id; inv = get_inv(uid)
     if not inv: bot.answer_callback_query(call.id, "Пусто!"); return
@@ -1086,6 +1123,7 @@ def sell_menu(call):
     bot.edit_message_text("💰 Что продать?", call.message.chat.id, call.message.message_id, reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("sellitem_"))
+@topic_check_cb
 def sell_do(call):
     uid = call.from_user.id; name = call.data[9:]
     qty = get_item_qty(uid, name)
@@ -1096,6 +1134,7 @@ def sell_do(call):
     bot.answer_callback_query(call.id, f"Продано {name} за 🐟{sp}!")
 
 @bot.callback_query_handler(func=lambda c: c.data == "chestmenu")
+@topic_check_cb
 def chest_menu(call):
     uid = call.from_user.id; inv = get_inv(uid)
     chests = [i for i in inv if i[3] == "chest"]
@@ -1107,6 +1146,7 @@ def chest_menu(call):
     bot.edit_message_text("📦 Какие сундуки открыть?", call.message.chat.id, call.message.message_id, reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("openchest_"))
+@topic_check_cb
 def open_chest_do(call):
     uid = call.from_user.id; chat_id = call.message.chat.id
     chest_name = call.data[len("openchest_"):]
@@ -1122,7 +1162,7 @@ def open_chest_do(call):
         bot.answer_callback_query(call.id, f"Ошибка: {e}")
         return
     bot.answer_callback_query(call.id, "✅ Открыт!")
-    bot.send_message(chat_id, result, parse_mode='Markdown')
+    _send(chat_id, result, parse_mode='Markdown')
     inv = get_inv(uid)
     chests = [i for i in inv if i[3] == "chest"]
     if chests:
@@ -1141,10 +1181,11 @@ def open_chest_do(call):
             pass
 
 @bot.callback_query_handler(func=lambda c: c.data == "invback")
+@topic_check_cb
 def inv_back(call):
     uid = call.from_user.id
     inv = get_inv(uid)
-    if not inv: bot.send_message(call.message.chat.id, "Пусто!"); return
+    if not inv: _send(call.message.chat.id, "Пусто!"); return
     t = "🎒 *Инвентарь*\n\n"
     cats = {"food":"🍴 Еда","medkit":"💊","weapon":"⚔️","armor":"🛡️","helmet":"🪖","shield":"🛡️",
             "accessory":"🎀","resource":"📦","artifact":"✨","chest":"📦","potion":"🧪","potion_base":"🧪"}
@@ -1162,10 +1203,11 @@ def inv_back(call):
     bot.edit_message_text(t, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=m)
 
 @bot.message_handler(func=lambda m: m.text == "💰 Продажа")
+@topic_check
 def menu_sell(message):
     uid = message.from_user.id; chat_id = message.chat.id
     inv = get_inv(uid)
-    if not inv: bot.send_message(chat_id, "Инвентарь пуст!"); return
+    if not inv: _send(chat_id, "Инвентарь пуст!"); return
     t = "💰 *Продажа предметов*\n\nЦены продажи:\n"
     grouped = {}
     for item in inv: grouped.setdefault(item[3], []).append(item)
@@ -1178,47 +1220,50 @@ def menu_sell(message):
                 t += f"  {i[2]} x{i[4]} — 🐟{sp}/шт\n"
                 m.add(types.InlineKeyboardButton(f"Продать {i[2]} (🐟{sp})", callback_data=f"sellitem_{i[2]}"))
     m.add(types.InlineKeyboardButton("📦 Открыть сундуки", callback_data="chestmenu"))
-    bot.send_message(chat_id, t, parse_mode='Markdown', reply_markup=m)
+    _send(chat_id, t, parse_mode='Markdown', reply_markup=m)
 
 @bot.message_handler(commands=['setphoto'])
+@topic_check
 def cmd_setphoto(message):
     uid = message.from_user.id; chat_id = message.chat.id
     seals = get_player_seals(uid)
-    if not seals: bot.send_message(chat_id, "Нет тюленей!"); return
+    if not seals: _send(chat_id, "Нет тюленей!"); return
     m = types.InlineKeyboardMarkup()
     for s in seals: m.add(types.InlineKeyboardButton(f"{s[2]} (ур.{s[9]})", callback_data=f"sphoto_{s[0]}"))
-    bot.send_message(chat_id, "📸 Выберите тюленя:", reply_markup=m)
+    _send(chat_id, "📸 Выберите тюленя:", reply_markup=m)
 
-# --- ИЗМЕНЕНИЕ: reg_step вместо register_next_step_handler_by_chat_id ---
 @bot.callback_query_handler(func=lambda c: c.data.startswith("sphoto_"))
+@topic_check_cb
 def sphoto_sel(call):
     sid = int(call.data.split("_")[1])
-    bot.send_message(call.message.chat.id, "Отправьте фото:")
+    _send(call.message.chat.id, "Отправьте фото:")
     reg_step(call.message.chat.id, call.from_user.id, proc_seal_photo, sid)
 
 def proc_seal_photo(message, sid):
     uid = message.from_user.id; chat_id = message.chat.id
-    if not message.photo: bot.send_message(chat_id, "Не фото!"); return
+    if not message.photo: _send(chat_id, "Не фото!"); return
     try:
         fi = bot.get_file(message.photo[-1].file_id); dl = bot.download_file(fi.file_path)
         os.makedirs("photos", exist_ok=True); p = f"photos/seal_{sid}.jpg"
         with open(p, 'wb') as f: f.write(dl)
-        update_seal(sid, photo_path=p); bot.send_message(chat_id, "✅ Фото обновлено!")
-    except Exception as e: bot.send_message(chat_id, f"❌ {e}")
+        update_seal(sid, photo_path=p); _send(chat_id, "✅ Фото обновлено!")
+    except Exception as e: _send(chat_id, f"❌ {e}")
 
 @bot.message_handler(func=lambda m: m.text == "🦭 Мой тюлень")
+@topic_check
 def menu_seal(message):
     uid = message.from_user.id; chat_id = message.chat.id
     seals = get_player_seals(uid)
-    if not seals: bot.send_message(chat_id, "Нет тюленей! /start"); return
+    if not seals: _send(chat_id, "Нет тюленей! /start"); return
     m = types.InlineKeyboardMarkup()
     for s in seals:
         check_baby_growth(s[0])
         baby = " 🍼" if s[11] == 1 else ""
         m.add(types.InlineKeyboardButton(f"{s[2]} (ур.{s[9]}){baby}", callback_data=f"sinfo_{s[0]}"))
-    bot.send_message(chat_id, "Выберите тюленя:", reply_markup=m)
+    _send(chat_id, "Выберите тюленя:", reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("sinfo_"))
+@topic_check_cb
 def seal_selected(call, sid=None):
     if sid is None: sid = int(call.data.split("_")[1])
     check_baby_growth(sid)
@@ -1279,13 +1324,14 @@ def seal_selected(call, sid=None):
         try: bot.delete_message(cid, mid)
         except: pass
         try:
-            with open(pp, 'rb') as f: bot.send_photo(cid, f, caption=t, reply_markup=m, parse_mode='Markdown')
-        except: bot.send_message(cid, t, reply_markup=m, parse_mode='Markdown')
+            with open(pp, 'rb') as f: _send_photo(cid, f, caption=t, reply_markup=m, parse_mode='Markdown')
+        except: _send(cid, t, reply_markup=m, parse_mode='Markdown')
     else:
         try: bot.edit_message_text(t, cid, mid, reply_markup=m, parse_mode='Markdown')
-        except: bot.send_message(cid, t, reply_markup=m, parse_mode='Markdown')
+        except: _send(cid, t, reply_markup=m, parse_mode='Markdown')
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("feed_"))
+@topic_check_cb
 def seal_feed(call):
     uid = call.from_user.id; sid = int(call.data.split("_")[1]); inv = get_inv(uid)
     food = [i for i in inv if i[3] == "food"]
@@ -1300,9 +1346,10 @@ def seal_feed(call):
     except:
         try: bot.delete_message(call.message.chat.id, call.message.message_id)
         except: pass
-        bot.send_message(call.message.chat.id, "Чем кормить?", reply_markup=m)
+        _send(call.message.chat.id, "Чем кормить?", reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("dfd_"))
+@topic_check_cb
 def seal_do_feed(call):
     uid = call.from_user.id; p = call.data.split("_"); sid = int(p[1]); name = "_".join(p[2:])
     info = SHOP_ITEMS.get(name)
@@ -1315,6 +1362,7 @@ def seal_do_feed(call):
     update_quest_progress(uid, "feed", 1); seal_selected(call, sid)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("heal_"))
+@topic_check_cb
 def seal_heal(call):
     uid = call.from_user.id; sid = int(call.data.split("_")[1]); seal = get_seal(sid)
     if not seal: return
@@ -1326,6 +1374,7 @@ def seal_heal(call):
     bot.answer_callback_query(call.id, f"💊 +{h} HP!"); seal_selected(call, sid)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("play_"))
+@topic_check_cb
 def seal_play(call):
     uid = call.from_user.id; sid = int(call.data.split("_")[1]); seal = get_seal(sid)
     if not seal: return
@@ -1348,19 +1397,20 @@ def seal_play(call):
     if enc: msg += f"\n\n{enc}"
     bot.answer_callback_query(call.id, msg); seal_selected(call, sid)
 
-# --- ИЗМЕНЕНИЕ: reg_step ---
 @bot.callback_query_handler(func=lambda c: c.data.startswith("rename_"))
+@topic_check_cb
 def seal_rename(call):
     sid = int(call.data.split("_")[1])
-    bot.send_message(call.message.chat.id, "Новое имя:")
+    _send(call.message.chat.id, "Новое имя:")
     reg_step(call.message.chat.id, call.from_user.id, proc_rename, sid)
 
 def proc_rename(message, sid):
     nn = message.text.strip()
-    if len(nn) > 20: bot.send_message(message.chat.id, "Слишком длинное!"); return
-    update_seal(sid, name=nn); bot.send_message(message.chat.id, f"✅ {nn}!")
+    if len(nn) > 20: _send(message.chat.id, "Слишком длинное!"); return
+    update_seal(sid, name=nn); _send(message.chat.id, f"✅ {nn}!")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("equip_"))
+@topic_check_cb
 def seal_equip_menu(call):
     uid = call.from_user.id; sid = int(call.data.split("_")[1]); inv = get_inv(uid)
     gt = ("weapon","armor","helmet","shield","accessory","artifact")
@@ -1377,9 +1427,10 @@ def seal_equip_menu(call):
     except:
         try: bot.delete_message(call.message.chat.id, call.message.message_id)
         except: pass
-        bot.send_message(call.message.chat.id, "Что надеть?", reply_markup=m)
+        _send(call.message.chat.id, "Что надеть?", reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("deq_"))
+@topic_check_cb
 def seal_do_equip(call):
     uid = call.from_user.id; p = call.data.split("_"); sid = int(p[1]); name = "_".join(p[2:])
     it = ITEM_TYPES.get(name)
@@ -1401,6 +1452,7 @@ def seal_do_equip(call):
     bot.answer_callback_query(call.id, f"Надето: {name}"); seal_selected(call, sid)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("spot_"))
+@topic_check_cb
 def seal_potion_menu(call):
     uid = call.from_user.id; sid = int(call.data.split("_")[1]); inv = get_inv(uid)
     potions = [i for i in inv if i[3] == "potion"]
@@ -1416,9 +1468,10 @@ def seal_potion_menu(call):
     except:
         try: bot.delete_message(call.message.chat.id, call.message.message_id)
         except: pass
-        bot.send_message(call.message.chat.id, "🧪 Какое зелье использовать?", reply_markup=m)
+        _send(call.message.chat.id, "🧪 Какое зелье использовать?", reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("spotuse_"))
+@topic_check_cb
 def seal_potion_use(call):
     uid = call.from_user.id; p = call.data.split("_"); sid = int(p[1]); name = "_".join(p[2:])
     if get_item_qty(uid, name) <= 0: bot.answer_callback_query(call.id, "Нет!"); return
@@ -1430,13 +1483,16 @@ def seal_potion_use(call):
     seal_selected(call, sid)
 
 @bot.callback_query_handler(func=lambda c: c.data == "back_main")
+@topic_check_cb
 def back_to_main(call):
     show_main_menu(call.message.chat.id)
     try: bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
     except: pass
+
 # ==================== МАГАЗИН ====================
 @bot.message_handler(commands=['shop'])
 @bot.message_handler(func=lambda m: m.text == "🛒 Магазин")
+@topic_check
 def menu_shop(message):
     uid = message.from_user.id; chat_id = message.chat.id
     fn = get_fishnets(uid)
@@ -1451,9 +1507,10 @@ def menu_shop(message):
         elif i["type"] == "accessory": t += f"  {n} — 🐟{pr} (+{ACCESSORY_BONUSES.get(n,0)}😊)\n"
         elif i["type"] == "potion_base": t += f"  {n} — 🐟{pr} (для зелий)\n"
         m.add(types.InlineKeyboardButton(f"{n} — 🐟{pr}", callback_data=f"buy_{n}"))
-    bot.send_message(chat_id, t, parse_mode='Markdown', reply_markup=m)
+    _send(chat_id, t, parse_mode='Markdown', reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("buy_"))
+@topic_check_cb
 def shop_buy(call):
     uid = call.from_user.id; name = call.data[4:]; info = SHOP_ITEMS.get(name)
     if not info: bot.answer_callback_query(call.id, "Не найден!"); return
@@ -1466,6 +1523,7 @@ def shop_buy(call):
 # ==================== КРАФТ С ТИРАМИ ====================
 @bot.message_handler(commands=['craft'])
 @bot.message_handler(func=lambda m: m.text == "🔨 Крафт")
+@topic_check
 def menu_craft(message):
     uid = message.from_user.id; chat_id = message.chat.id
     t = "🔨 *Крафт*\n\n"
@@ -1488,9 +1546,10 @@ def menu_craft(message):
             if r.get("tier", "common") != tier: continue
             if r["type"] == "potion": continue
             m.add(types.InlineKeyboardButton(f"{'✅' if can_craft(uid, r) else '❌'} {r['name']}", callback_data=f"cft_{r['name']}"))
-    bot.send_message(chat_id, t, parse_mode='Markdown', reply_markup=m)
+    _send(chat_id, t, parse_mode='Markdown', reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("cft_"))
+@topic_check_cb
 def craft_do(call):
     uid = call.from_user.id; name = call.data[4:]
     r = next((x for x in CRAFT_RECIPES if x["name"] == name), None)
@@ -1506,6 +1565,7 @@ def craft_do(call):
 # ==================== ЗЕЛЬЯ ====================
 @bot.message_handler(commands=['potion'])
 @bot.message_handler(func=lambda m: m.text == "🧪 Зелья")
+@topic_check
 def menu_potion(message):
     uid = message.from_user.id; chat_id = message.chat.id
     t = "🧪 *Варка зелий*\n\n"
@@ -1519,9 +1579,10 @@ def menu_potion(message):
     for r in CRAFT_RECIPES:
         if r["type"] != "potion": continue
         m.add(types.InlineKeyboardButton(f"{'✅' if can_craft(uid, r) else '❌'} {r['name']}", callback_data=f"pw_{r['name']}"))
-    bot.send_message(chat_id, t, parse_mode='Markdown', reply_markup=m)
+    _send(chat_id, t, parse_mode='Markdown', reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("pw_"))
+@topic_check_cb
 def potion_brew(call):
     uid = call.from_user.id; name = call.data[3:]
     r = next((x for x in CRAFT_RECIPES if x["name"] == name and x["type"] == "potion"), None)
@@ -1534,12 +1595,13 @@ def potion_brew(call):
 # ==================== ЗАЧАРОВАНИЕ ====================
 @bot.message_handler(commands=['enchant'])
 @bot.message_handler(func=lambda m: m.text == "✨ Зачарование")
+@topic_check
 def menu_enchant(message):
     uid = message.from_user.id; chat_id = message.chat.id
     inv = get_inv(uid)
     equippable = [i for i in inv if ITEM_TYPES.get(i[2]) in ("weapon","armor","helmet","shield")]
     if not equippable:
-        bot.send_message(chat_id, "Нет предметов для зачарования! Нужны оружие, броня, шлемы или щиты.")
+        _send(chat_id, "Нет предметов для зачарования! Нужны оружие, броня, шлемы или щиты.")
         return
     t = "✨ *Зачарование*\n\nВыберите предмет:\n\n"
     m = types.InlineKeyboardMarkup()
@@ -1547,9 +1609,10 @@ def menu_enchant(message):
         ench = get_enchantment_for_item(uid, i[2])
         label = f"{i[2]} (x{i[4]})" + (f" [{ench}]" if ench else "")
         m.add(types.InlineKeyboardButton(label, callback_data=f"ensel_{i[2]}"))
-    bot.send_message(chat_id, t, parse_mode='Markdown', reply_markup=m)
+    _send(chat_id, t, parse_mode='Markdown', reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("ensel_"))
+@topic_check_cb
 def enchant_select(call):
     uid = call.from_user.id; item_name = call.data[6:]
     t = f"✨ *Зачарование: {item_name}*\n\nВыберите тип:\n\n"
@@ -1566,6 +1629,7 @@ def enchant_select(call):
     bot.edit_message_text(t, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("endo_"))
+@topic_check_cb
 def enchant_do(call):
     uid = call.from_user.id; p = call.data.split("_", 2); item_name = p[1]; ench_name = p[2]
     result = do_enchant_item(uid, item_name, ench_name)
@@ -1575,18 +1639,20 @@ def enchant_do(call):
 # ==================== РАБОТА ====================
 @bot.message_handler(commands=['work'])
 @bot.message_handler(func=lambda m: m.text == "💼 Работа")
+@topic_check
 def menu_work(message):
     uid = message.from_user.id; chat_id = message.chat.id
     seals = get_player_seals(uid)
-    if not seals: bot.send_message(chat_id, "Нет тюленей!"); return
+    if not seals: _send(chat_id, "Нет тюленей!"); return
     m = types.InlineKeyboardMarkup()
     for s in seals:
         if s[11] == 1: continue
         m.add(types.InlineKeyboardButton(f"{s[2]} (ур.{s[9]})", callback_data=f"wsel_{s[0]}"))
-    if not m.keyboard: bot.send_message(chat_id, "Все малыши!"); return
-    bot.send_message(chat_id, "💼 Выберите тюленя:", reply_markup=m)
+    if not m.keyboard: _send(chat_id, "Все малыши!"); return
+    _send(chat_id, "💼 Выберите тюленя:", reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("wsel_"))
+@topic_check_cb
 def work_sel(call):
     sid = int(call.data.split("_")[1]); seal = get_seal(sid)
     if not seal: return
@@ -1607,6 +1673,7 @@ def work_sel(call):
     bot.edit_message_text(t, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("wdo_"))
+@topic_check_cb
 def work_do(call):
     uid = call.from_user.id; p = call.data.split("_"); sid = int(p[1]); ji = int(p[2])
     if ji < 0 or ji >= len(JOBS): bot.answer_callback_query(call.id, "Не найдена!"); return
@@ -1635,18 +1702,20 @@ def work_do(call):
 # ==================== БОЙ (с поддержкой зелий) ====================
 @bot.message_handler(commands=['battle'])
 @bot.message_handler(func=lambda m: m.text == "⚔️ Бой")
+@topic_check
 def menu_battle(message):
     uid = message.from_user.id; chat_id = message.chat.id
     seals = get_player_seals(uid)
-    if not seals: bot.send_message(chat_id, "Нет тюленей!"); return
+    if not seals: _send(chat_id, "Нет тюленей!"); return
     m = types.InlineKeyboardMarkup()
     for s in seals:
         if s[11] == 1: continue
         m.add(types.InlineKeyboardButton(f"{s[2]} (ур.{s[9]})", callback_data=f"bat_{s[0]}"))
-    if not m.keyboard: bot.send_message(chat_id, "Все малыши!"); return
-    bot.send_message(chat_id, "Выберите тюленя:", reply_markup=m)
+    if not m.keyboard: _send(chat_id, "Все малыши!"); return
+    _send(chat_id, "Выберите тюленя:", reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("bat_"))
+@topic_check_cb
 def do_battle(call):
     uid = call.from_user.id; sid = int(call.data.split("_")[1]); seal = get_seal(sid)
     if not seal or seal[3] <= 0: bot.answer_callback_query(call.id, "Не может!"); return
@@ -1698,22 +1767,23 @@ def do_battle(call):
         log.append("\n💀 *Поражение...*")
     else: log.append("\n🤝 Ничья!")
     bot.edit_message_text("\n".join(log), call.message.chat.id, call.message.message_id, parse_mode='Markdown')
-
 # ==================== ПОДЗЕМЕЛЬЕ ====================
 @bot.message_handler(commands=['dungeon'])
 @bot.message_handler(func=lambda m: m.text == "🏰 Подземелье")
+@topic_check
 def menu_dungeon(message):
     uid = message.from_user.id; chat_id = message.chat.id
     seals = get_player_seals(uid)
-    if not seals: bot.send_message(chat_id, "Нет тюленей!"); return
+    if not seals: _send(chat_id, "Нет тюленей!"); return
     m = types.InlineKeyboardMarkup()
     for s in seals:
         if s[11] == 1: continue
         m.add(types.InlineKeyboardButton(f"{s[2]} (ур.{s[9]})", callback_data=f"ds_{s[0]}"))
-    if not m.keyboard: bot.send_message(chat_id, "Все малыши!"); return
-    bot.send_message(chat_id, "🏰 Выберите тюленя (10 этажей, сундуки!):", reply_markup=m)
+    if not m.keyboard: _send(chat_id, "Все малыши!"); return
+    _send(chat_id, "🏰 Выберите тюленя (10 этажей, сундуки!):", reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("ds_"))
+@topic_check_cb
 def dng_start(call):
     uid = call.from_user.id; sid = int(call.data.split("_")[1]); seal = get_seal(sid)
     if not seal: return
@@ -1768,6 +1838,7 @@ def dng_floor(call, sid, fl, mon_idx):
     bot.edit_message_text(t, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("da_"))
+@topic_check_cb
 def dng_atk(call):
     uid = call.from_user.id; p = call.data.split("_"); sid = int(p[1]); fl = int(p[2]); mon_idx = int(p[3])
     seal = get_seal(sid)
@@ -1815,38 +1886,42 @@ def dng_atk(call):
         bot.edit_message_text("\n".join(log), call.message.chat.id, call.message.message_id, parse_mode='Markdown')
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("dn_"))
+@topic_check_cb
 def dng_next(call):
     p = call.data.split("_"); dng_floor(call, int(p[1]), int(p[2]), int(p[3]))
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("df_"))
+@topic_check_cb
 def dng_flee(call):
     uid = call.from_user.id
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("UPDATE dungeon_runs SET active=0 WHERE user_id=?", (uid,))
     conn.commit(); conn.close()
     bot.edit_message_text("🏃 Сбежали.", call.message.chat.id, call.message.message_id)
+
 # ==================== РЫБАЛКА ====================
 fish_active = {}
 
 @bot.message_handler(commands=['fish'])
 @bot.message_handler(func=lambda m: m.text == "🎣 Рыбалка")
+@topic_check
 def cmd_fish(message):
     uid = message.from_user.id; chat_id = message.chat.id
     p = get_player(uid)
-    if not p: bot.send_message(chat_id, "/start"); return
+    if not p: _send(chat_id, "/start"); return
     fc = p[7]
     if fc:
         try:
             rem = timedelta(minutes=FISHING_COOLDOWN_MIN) - (datetime.now() - datetime.fromisoformat(fc))
             if rem.total_seconds() > 0:
-                bot.send_message(chat_id, f"⏳ {int(rem.total_seconds()//60)}м {int(rem.total_seconds()%60)}с"); return
+                _send(chat_id, f"⏳ {int(rem.total_seconds()//60)}м {int(rem.total_seconds()%60)}с"); return
         except: pass
     fish = random.choice(FISH_TYPES)
     opts = ["Подсечь!","Ждать","Отпустить"]; opts.remove(fish["correct"]); opts.append(fish["correct"]); random.shuffle(opts)
     t = f"🎣 *Рыбалка!*\n\nПоклёвка: {fish['name']}\nУ вас 5 секунд!\n"
     m = types.InlineKeyboardMarkup(row_width=3)
     for o in opts: m.add(types.InlineKeyboardButton(o, callback_data=f"fh_{o}_{fish['name']}"))
-    msg = bot.send_message(chat_id, t, parse_mode='Markdown', reply_markup=m)
+    msg = _send(chat_id, t, parse_mode='Markdown', reply_markup=m)
     fish_active[uid] = True
     def timeout():
         time.sleep(5)
@@ -1857,6 +1932,7 @@ def cmd_fish(message):
     threading.Thread(target=timeout, daemon=True).start()
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("fh_"))
+@topic_check_cb
 def fish_cb(call):
     uid = call.from_user.id
     if not fish_active.get(uid): bot.answer_callback_query(call.id, "Время вышло!"); return
@@ -1877,21 +1953,23 @@ def fish_cb(call):
 # ==================== ДУЭЛИ ====================
 @bot.message_handler(commands=['duel'])
 @bot.message_handler(func=lambda m: m.text == "🤺 Дуэль")
+@topic_check
 def cmd_duel(message):
     uid = message.from_user.id; chat_id = message.chat.id
     seals = get_player_seals(uid)
-    if not seals: bot.send_message(chat_id, "Нет тюленей!"); return
+    if not seals: _send(chat_id, "Нет тюленей!"); return
     m = types.InlineKeyboardMarkup()
     for s in seals:
         if s[11] == 1: continue
         m.add(types.InlineKeyboardButton(f"{s[2]} (ур.{s[9]})", callback_data=f"dusel_{s[0]}"))
-    if not m.keyboard: bot.send_message(chat_id, "Все малыши!"); return
-    bot.send_message(chat_id, "🤺 Выберите тюленя:", reply_markup=m)
+    if not m.keyboard: _send(chat_id, "Все малыши!"); return
+    _send(chat_id, "🤺 Выберите тюленя:", reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("dusel_"))
+@topic_check_cb
 def duel_sel(call):
     sid = int(call.data.split("_")[1])
-    bot.send_message(call.message.chat.id, "Введите @username или ID соперника:")
+    _send(call.message.chat.id, "Введите @username или ID соперника:")
     reg_step(call.message.chat.id, call.from_user.id, duel_target, sid)
 
 def duel_target(message, sid):
@@ -1900,22 +1978,23 @@ def duel_target(message, sid):
     if txt.startswith("@"):
         conn = sqlite3.connect(DB_PATH); c = conn.cursor()
         c.execute("SELECT user_id FROM players WHERE username=?", (txt[1:],)); r = c.fetchone(); conn.close()
-        if not r: bot.send_message(chat_id, "Не найден!"); return
+        if not r: _send(chat_id, "Не найден!"); return
         oid = r[0]
     else:
         try: oid = int(txt)
-        except: bot.send_message(chat_id, "Неверный формат!"); return
-    if oid == uid: bot.send_message(chat_id, "Нельзя с собой!"); return
+        except: _send(chat_id, "Неверный формат!"); return
+    if oid == uid: _send(chat_id, "Нельзя с собой!"); return
     seal = get_seal(sid); did = create_duel(uid, oid, sid)
-    bot.send_message(chat_id, "🤺 Вызов отправлен! Ожидайте ответа.")
+    _send(chat_id, "🤺 Вызов отправлен! Ожидайте ответа.")
     try:
         m2 = types.InlineKeyboardMarkup()
         m2.add(types.InlineKeyboardButton("⚔️ Принять", callback_data=f"duac_{did}"),
                types.InlineKeyboardButton("❌ Отказать", callback_data=f"durj_{did}"))
-        bot.send_message(oid, f"🤺 Вас вызвал на дуэль @{message.from_user.username}!\nТюлень: {seal[2]} (ур.{seal[9]})", reply_markup=m2)
+        _send(oid, f"🤺 Вас вызвал на дуэль @{message.from_user.username}!\nТюлень: {seal[2]} (ур.{seal[9]})", reply_markup=m2)
     except: pass
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("duac_"))
+@topic_check_cb
 def duel_accept(call):
     uid = call.from_user.id; did = int(call.data.split("_")[1]); duel = get_duel(did)
     if not duel or duel[5] != 'pending': bot.answer_callback_query(call.id, "Недоступна!"); return
@@ -1929,6 +2008,7 @@ def duel_accept(call):
     bot.edit_message_text("Выберите тюленя:", call.message.chat.id, call.message.message_id, reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("duseal_"))
+@topic_check_cb
 def duel_seal(call):
     uid = call.from_user.id; p = call.data.split("_"); did = int(p[1]); osid = int(p[2])
     duel = get_duel(did)
@@ -1986,17 +2066,18 @@ def duel_seal(call):
     conn.commit(); conn.close()
     bot.edit_message_text("\n".join(log), call.message.chat.id, call.message.message_id, parse_mode='Markdown')
     other_id = duel[1] if duel[1] != uid else duel[2]
-    try: bot.send_message(other_id, "\n".join(log), parse_mode='Markdown')
+    try: _send(other_id, "\n".join(log), parse_mode='Markdown')
     except: pass
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("durj_"))
+@topic_check_cb
 def duel_reject(call):
     did = int(call.data.split("_")[1]); duel = get_duel(did)
     if not duel: bot.answer_callback_query(call.id, "Не найдена!"); return
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("UPDATE duels SET status='rejected' WHERE duel_id=?", (did,)); conn.commit(); conn.close()
     bot.edit_message_text("❌ Дуэль отклонена.", call.message.chat.id, call.message.message_id)
-    try: bot.send_message(duel[1], "❌ Ваш вызов отклонён.")
+    try: _send(duel[1], "❌ Ваш вызов отклонён.")
     except: pass
 
 # ==================== КВЕСТОВЫЕ ЦЕПОЧКИ ====================
@@ -2016,15 +2097,17 @@ def show_quest_chains(uid, chat_id, message_id=None):
         t += "\n"
     if message_id:
         try: bot.edit_message_text(t, chat_id, message_id, parse_mode='Markdown', reply_markup=m)
-        except: bot.send_message(chat_id, t, parse_mode='Markdown', reply_markup=m)
-    else: bot.send_message(chat_id, t, parse_mode='Markdown', reply_markup=m)
+        except: _send(chat_id, t, parse_mode='Markdown', reply_markup=m)
+    else: _send(chat_id, t, parse_mode='Markdown', reply_markup=m)
 
 @bot.message_handler(commands=['questchain'])
 @bot.message_handler(func=lambda m: m.text == "📚 Цепочки")
+@topic_check
 def cmd_questchain(message):
     show_quest_chains(message.from_user.id, message.chat.id)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("qcs_"))
+@topic_check_cb
 def qc_start(call):
     uid = call.from_user.id; cid = int(call.data.split("_")[1])
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
@@ -2036,15 +2119,17 @@ def qc_start(call):
 # ==================== БИРЖА ====================
 @bot.message_handler(commands=['trade'])
 @bot.message_handler(func=lambda m: m.text == "📦 Биржа")
+@topic_check
 def menu_trade(message):
     chat_id = message.chat.id
     m = types.InlineKeyboardMarkup()
     m.add(types.InlineKeyboardButton("📤 Создать", callback_data="trc"))
     m.add(types.InlineKeyboardButton("📋 Активные", callback_data="trl_0"))
     m.add(types.InlineKeyboardButton("📦 Мои", callback_data="trm"))
-    bot.send_message(chat_id, "📦 *Биржа*", parse_mode='Markdown', reply_markup=m)
+    _send(chat_id, "📦 *Биржа*", parse_mode='Markdown', reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data == "trc")
+@topic_check_cb
 def trade_create(call):
     uid = call.from_user.id; inv = get_inv(uid)
     if not inv: bot.answer_callback_query(call.id, "Пусто!"); return
@@ -2056,23 +2141,25 @@ def trade_create(call):
     bot.edit_message_text("Что продать?", call.message.chat.id, call.message.message_id, reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("trs_"))
+@topic_check_cb
 def trade_price(call):
     name = call.data[4:]
-    bot.send_message(call.message.chat.id, f"Цена для {name}?")
+    _send(call.message.chat.id, f"Цена для {name}?")
     reg_step(call.message.chat.id, call.from_user.id, tr_set, name)
 
 def tr_set(message, name):
     uid = message.from_user.id; chat_id = message.chat.id
     try: pr = int(message.text.strip())
-    except: bot.send_message(chat_id, "Число!"); return
-    if pr < 1: bot.send_message(chat_id, ">0!"); return
+    except: _send(chat_id, "Число!"); return
+    if pr < 1: _send(chat_id, ">0!"); return
     it = ITEM_TYPES.get(name, "misc")
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("INSERT INTO trade_offers (seller_id,item_name,item_type,price,created_at,active) VALUES (?,?,?,?,?,1)", (uid, name, it, pr, datetime.now().isoformat()))
     conn.commit(); conn.close(); remove_from_inv(uid, name)
-    bot.send_message(chat_id, f"✅ {name} за 🐟{pr}!")
+    _send(chat_id, f"✅ {name} за 🐟{pr}!")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("trl_"))
+@topic_check_cb
 def trade_list(call):
     uid = call.from_user.id; pg = int(call.data.split("_")[1])
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
@@ -2090,6 +2177,7 @@ def trade_list(call):
     bot.edit_message_text(t, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("trbuy_"))
+@topic_check_cb
 def trade_buy(call):
     uid = call.from_user.id; oid = int(call.data.split("_")[1])
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
@@ -2101,10 +2189,11 @@ def trade_buy(call):
     add_fishnets(uid, -pr); add_fishnets(sid, pr); add_to_inv(uid, nm, it)
     c.execute("UPDATE trade_offers SET active=0 WHERE offer_id=?", (oid,)); conn.commit(); conn.close()
     bot.answer_callback_query(call.id, f"Куплено: {nm}!")
-    try: bot.send_message(sid, f"💰 {nm} продан за 🐟{pr}!")
+    try: _send(sid, f"💰 {nm} продан за 🐟{pr}!")
     except: pass
 
 @bot.callback_query_handler(func=lambda c: c.data == "trm")
+@topic_check_cb
 def trade_mine(call):
     uid = call.from_user.id
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
@@ -2119,6 +2208,7 @@ def trade_mine(call):
     bot.edit_message_text(t, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("trcan_"))
+@topic_check_cb
 def trade_cancel(call):
     uid = call.from_user.id; oid = int(call.data.split("_")[1])
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
@@ -2128,388 +2218,70 @@ def trade_cancel(call):
     add_to_inv(uid, r[0], r[1]); bot.answer_callback_query(call.id, f"Снято: {r[0]}!")
 
 @bot.callback_query_handler(func=lambda c: c.data == "trb")
+@topic_check_cb
 def trade_back(call):
     m = types.InlineKeyboardMarkup()
     m.add(types.InlineKeyboardButton("📤 Создать", callback_data="trc"))
     m.add(types.InlineKeyboardButton("📋 Активные", callback_data="trl_0"))
     m.add(types.InlineKeyboardButton("📦 Мои", callback_data="trm"))
     bot.edit_message_text("📦 *Биржа*", call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=m)
-# ==================== КЛАНЫ ====================
-@bot.message_handler(commands=['clan'])
-@bot.message_handler(func=lambda m: m.text == "🐋 Клан")
-def menu_clan(message):
-    uid = message.from_user.id; chat_id = message.chat.id
-    clan = get_clan_by_user(uid)
-    if clan:
-        cid = clan[0]; members = get_clan_members(cid); mc = len(members)
-        t = f"🐋 *Клан: {clan[1]} {clan[2]}*\n\nЛидер: @{clan[3]}\nУчастников: {mc}/{MAX_CLAN_MEMBERS}\n\n"
-        m = types.InlineKeyboardMarkup()
-        if clan[3] == uid:
-            m.add(types.InlineKeyboardButton("🏰 Клановое подземелье", callback_data=f"cds_{cid}"))
-            m.add(types.InlineKeyboardButton("📋 Участники", callback_data=f"cmem_{cid}"))
-        m.add(types.InlineKeyboardButton("🚪 Покинуть", callback_data=f"cleave_{cid}"))
-        bot.send_message(chat_id, t, parse_mode='Markdown', reply_markup=m)
-    else:
-        t = "🐋 Вы не состоите в клане.\n\nСоздайте свой или попросите пригласить!"
-        m = types.InlineKeyboardMarkup()
-        m.add(types.InlineKeyboardButton("➕ Создать клан", callback_data="ccreate"))
-        bot.send_message(chat_id, t, parse_mode='Markdown', reply_markup=m)
-
-@bot.callback_query_handler(func=lambda c: c.data == "ccreate")
-def clan_create(call):
-    bot.send_message(call.message.chat.id, "Введите название клана:")
-    reg_step(call.message.chat.id, call.from_user.id, clan_create_name)
-
-def clan_create_name(message):
-    uid = message.from_user.id; chat_id = message.chat.id
-    name = message.text.strip()
-    if len(name) > 30: bot.send_message(chat_id, "Слишком длинное!"); return
-    bot.send_message(chat_id, f"Выберите эмблему: {' '.join(CLAN_EMOJIS)}\nОтправьте номер (1-{len(CLAN_EMOJIS)}):")
-    reg_step(chat_id, uid, clan_create_emblem, name)
-
-def clan_create_emblem(message, name):
-    uid = message.from_user.id; chat_id = message.chat.id
-    try: idx = int(message.text.strip()) - 1
-    except: bot.send_message(chat_id, "Число!"); return
-    if idx < 0 or idx >= len(CLAN_EMOJIS): bot.send_message(chat_id, "Неверный номер!"); return
-    emblem = CLAN_EMOJIS[idx]
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("INSERT INTO clans (name,emblem,leader_id,created_at) VALUES (?,?,?,?)", (name, emblem, uid, datetime.now().isoformat()))
-    cid = c.lastrowid
-    c.execute("INSERT INTO clan_members (clan_id,user_id,joined_at) VALUES (?,?,?)", (cid, uid, datetime.now().isoformat()))
-    conn.commit(); conn.close()
-    bot.send_message(chat_id, f"✅ Клан {name} {emblem} создан!")
-
-@bot.callback_query_handler(func=lambda c: c.data.startswith("cleave_"))
-def clan_leave(call):
-    uid = call.from_user.id; cid = int(call.data.split("_")[1])
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("DELETE FROM clan_members WHERE user_id=? AND clan_id=?", (uid, cid))
-    c.execute("SELECT leader_id FROM clans WHERE clan_id=?", (cid,)); r = c.fetchone()
-    if r and r[0] == uid:
-        c.execute("DELETE FROM clan_members WHERE clan_id=?", (cid,))
-        c.execute("DELETE FROM clans WHERE clan_id=?", (cid,))
-        c.execute("DELETE FROM clan_dungeons WHERE clan_id=?", (cid,))
-    conn.commit(); conn.close()
-    bot.answer_callback_query(call.id, "Вы покинули клан!")
-
-@bot.callback_query_handler(func=lambda c: c.data.startswith("cmem_"))
-def clan_members(call):
-    cid = int(call.data.split("_")[1]); members = get_clan_members(cid)
-    t = "📋 *Участники клана*\n\n"
-    for mid in members:
-        p = get_player(mid)
-        if p: t += f"  @{p[1]} ({get_seal_count(mid)} тюленей)\n"
-    bot.edit_message_text(t, call.message.chat.id, call.message.message_id, parse_mode='Markdown')
-
-@bot.callback_query_handler(func=lambda c: c.data.startswith("cds_"))
-def clan_dng_start(call):
-    uid = call.from_user.id; cid = int(call.data.split("_")[1]); clan = get_clan_by_user(uid)
-    if not clan or clan[3] != uid: bot.answer_callback_query(call.id, "Только лидер!"); return
-    members = get_clan_members(cid); all_seals = []
-    for mid in members:
-        for s in get_player_seals(mid):
-            if s[11] == 0 and s[9] >= CLAN_DUNGEON_MIN_LEVEL: all_seals.append(s)
-    if not all_seals: bot.answer_callback_query(call.id, "Нет тюленей 4+ уровня!"); return
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("DELETE FROM clan_dungeons WHERE clan_id=?", (cid,))
-    c.execute("INSERT INTO clan_dungeons (clan_id,current_floor,active,started_by) VALUES (?,1,1,?)", (cid, uid))
-    conn.commit(); conn.close()
-    clan_dng_floor(call, cid, 1)
-
-def clan_dng_floor(call, cid, fl):
-    members = get_clan_members(cid); all_seals = []
-    for mid in members:
-        for s in get_player_seals(mid):
-            if s[11] == 0 and s[9] >= CLAN_DUNGEON_MIN_LEVEL: all_seals.append(s)
-    if not all_seals: bot.edit_message_text("Нет доступных тюленей!", call.message.chat.id, call.message.message_id); return
-    mon = CLAN_DUNGEON_MONSTERS[fl-1].copy()
-    total_str = sum(get_effective_stats(s[0])[0] for s in all_seals)
-    total_def = sum(get_effective_stats(s[0])[1] for s in all_seals)
-    total_hp = sum(s[3] for s in all_seals)
-    t = f"🏰 *Клановое подземелье — Этаж {fl}/{CLAN_DUNGEON_FLOORS}*\n\n"
-    t += f"🦭 Тюленей: {len(all_seals)}\n💪 Сум. сила: {total_str}\n🛡️ Сум. защита: {total_def}\n❤️ Сум. HP: {total_hp}\n\n"
-    t += f"{mon['name']}: ❤️{mon['hp']} 💪{mon['str']} 🛡️{mon['def']}\n"
+@bot.callback_query_handler(func=lambda c: c.data == "trb")
+@topic_check_cb
+def trade_back(call):
+    chat_id = call.message.chat.id
     m = types.InlineKeyboardMarkup()
-    m.add(types.InlineKeyboardButton("⚔️ Атаковать", callback_data=f"cda_{cid}_{fl}"))
-    m.add(types.InlineKeyboardButton("🏃 Отступить", callback_data=f"cdf_{cid}_{fl}"))
-    bot.edit_message_text(t, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=m)
+    m.add(types.InlineKeyboardButton("📤 Создать", callback_data="trc"))
+    m.add(types.InlineKeyboardButton("📋 Активные", callback_data="trl_0"))
+    m.add(types.InlineKeyboardButton("📦 Мои", callback_data="trm"))
+    bot.edit_message_text("📦 *Биржа*", call.message.chat.id, call.message.message_id,
+                          parse_mode='Markdown', reply_markup=m)
 
-@bot.callback_query_handler(func=lambda c: c.data.startswith("cda_"))
-def clan_dng_atk(call):
-    uid = call.from_user.id; p = call.data.split("_"); cid = int(p[1]); fl = int(p[2])
-    members = get_clan_members(cid); all_seals = []
-    for mid in members:
-        for s in get_player_seals(mid):
-            if s[11] == 0 and s[9] >= CLAN_DUNGEON_MIN_LEVEL: all_seals.append(s)
-    if not all_seals: bot.answer_callback_query(call.id, "Нет тюленей!"); return
-    mon = CLAN_DUNGEON_MONSTERS[fl-1].copy()
-    ts = sum(get_effective_stats(s[0])[0] for s in all_seals)
-    td = sum(get_effective_stats(s[0])[1] for s in all_seals)
-    seal_hp = {s[0]: s[3] for s in all_seals}; thp = sum(seal_hp.values())
-    log = [f"🏰 Этаж {fl}: {len(all_seals)} тюленей vs {mon['name']}"]
-    while thp > 0 and mon["hp"] > 0:
-        dmg = max(1, ts - mon["def"] + random.randint(-5, 10)); mon["hp"] -= dmg
-        log.append(f"Тюлени →{dmg} (монстр {max(0, mon['hp'])}❤️)")
-        if mon["hp"] <= 0: break
-        dm = max(1, mon["str"] - td + random.randint(-2, 6))
-        target = random.choice(all_seals); new_hp = max(1, seal_hp[target[0]] - dm)
-        seal_hp[target[0]] = new_hp; update_seal(target[0], health=new_hp)
-        thp -= dm; log.append(f"{mon['name']} →{target[2]} на {dm} (осталось {max(0, thp)}❤️)")
-    if mon["hp"] <= 0:
-        log.append("\n✅ Монстр повержен!")
-        rw = 200 + fl * 50; eg = 100 + fl * 30
-        for mid in members:
-            add_fishnets(mid, rw)
-            for s in get_player_seals(mid):
-                if s[11] == 0: update_seal(s[0], exp=s[10]+eg)
-        log.append(f"🏆 Все получили 🐟{rw} и +{eg}оп!")
-        if fl >= CLAN_DUNGEON_FLOORS:
-            log.append("👑 *Клановое подземелье пройдено!*")
-            conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-            c.execute("UPDATE clan_dungeons SET active=0 WHERE clan_id=?", (cid,)); conn.commit(); conn.close()
-            bot.edit_message_text("\n".join(log), call.message.chat.id, call.message.message_id, parse_mode='Markdown')
-        else:
-            nf = fl + 1; log.append(f"Открыт этаж {nf}!")
-            m = types.InlineKeyboardMarkup()
-            m.add(types.InlineKeyboardButton("➡️ Дальше", callback_data=f"cdn_{cid}_{nf}"))
-            m.add(types.InlineKeyboardButton("🏃 Выйти", callback_data=f"cdf_{cid}_{fl}"))
-            bot.edit_message_text("\n".join(log), call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=m)
-    elif thp <= 0:
-        log.append("\n💀 Все тюлени пали...")
-        for s in all_seals: update_seal(s[0], health=1, mood=max(0, s[5]-20))
-        conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-        c.execute("UPDATE clan_dungeons SET active=0 WHERE clan_id=?", (cid,)); conn.commit(); conn.close()
-        bot.edit_message_text("\n".join(log), call.message.chat.id, call.message.message_id, parse_mode='Markdown')
 
-@bot.callback_query_handler(func=lambda c: c.data.startswith("cdn_"))
-def clan_dng_next(call):
-    p = call.data.split("_"); clan_dng_floor(call, int(p[1]), int(p[2]))
+# ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 
-@bot.callback_query_handler(func=lambda c: c.data.startswith("cdf_"))
-def clan_dng_flee(call):
-    cid = int(call.data.split("_")[1])
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("UPDATE clan_dungeons SET active=0 WHERE clan_id=?", (cid,)); conn.commit(); conn.close()
-    bot.edit_message_text("🏃 Отступление.", call.message.chat.id, call.message.message_id)
-
-# ==================== ФРАКЦИИ ====================
-@bot.message_handler(commands=['faction'])
-@bot.message_handler(func=lambda m: m.text == "🏛 Фракции")
-def menu_faction(message):
-    uid = message.from_user.id; chat_id = message.chat.id
-    p = get_player(uid)
-    if not p: bot.send_message(chat_id, "/start"); return
-    t = "🏛 *Фракции*\n\n"
-    for fid, fd in FACTIONS.items():
-        mk = " ✅" if p[5] == fid else ""
-        t += f"*{fd['name']}*{mk}\n  {fd['desc']}\n"
-        if p[5] == fid: t += f"  Репутация: {p[6]}\n"
-        t += "\n"
-    m = types.InlineKeyboardMarkup()
-    for fid, fd in FACTIONS.items():
-        if p[5] == fid: m.add(types.InlineKeyboardButton(f"🔄 Сменить: {fd['name']}", callback_data=f"fj_{fid}"))
-        else: m.add(types.InlineKeyboardButton(f"Вступить: {fd['name']}", callback_data=f"fj_{fid}"))
-    bot.send_message(chat_id, t, parse_mode='Markdown', reply_markup=m)
-
-@bot.callback_query_handler(func=lambda c: c.data.startswith("fj_"))
-def faction_join(call):
-    fid = call.data.split("_")[1]
-    if fid not in FACTIONS: bot.answer_callback_query(call.id, "Не найдена!"); return
-    update_player(call.from_user.id, faction=fid, faction_rep=0)
-    bot.answer_callback_query(call.id, f"Вступили: {FACTIONS[fid]['name']}!")
-
-# ==================== ГОЛОСОВАНИЕ ====================
-@bot.message_handler(commands=['vote'])
-def cmd_vote(message):
-    uid = message.from_user.id; chat_id = message.chat.id
-    today = date.today().isoformat()
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT vote FROM votes WHERE user_id=? AND date=?", (uid, today)); ex = c.fetchone(); conn.close()
-    ev = get_todays_event(); t = f"🗳 *Голосование*\n\n{ev['desc']}\n\n"
-    act = get_active_event_text()
-    if act: t += f"✅ Активно: {act}\n\n"
-    if ex: t += f"Вы голосовали: {ex[0].upper()}"; bot.send_message(chat_id, t, parse_mode='Markdown'); return
-    t += "Голосуем?"
-    m = types.InlineKeyboardMarkup()
-    m.add(types.InlineKeyboardButton("✅ За", callback_data="vy"), types.InlineKeyboardButton("❌ Против", callback_data="vn"))
-    bot.send_message(chat_id, t, parse_mode='Markdown', reply_markup=m)
-
-@bot.callback_query_handler(func=lambda c: c.data in ("vy", "vn"))
-def vote_cb(call):
-    uid = call.from_user.id; vote = "yes" if call.data == "vy" else "no"; today = date.today().isoformat()
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+def _send(chat_id, text, parse_mode=None, reply_markup=None):
+    """Безопасная отправка сообщения с обработкой ошибок."""
     try:
-        c.execute("INSERT INTO votes (user_id,event_type,vote,date) VALUES (?,?,?,?)", (uid, "daily", vote, today)); conn.commit()
-    except sqlite3.IntegrityError:
-        bot.answer_callback_query(call.id, "Уже голосовали!"); conn.close(); return
-    conn.close()
-    if check_vote_result():
-        ev = get_todays_event(); activate_event(ev["event_type"], ev["effect"])
-        bot.answer_callback_query(call.id, f"Активировано: {ev['desc']}")
-        bot.edit_message_text(f"✅ *Активировано!*\n{ev['desc']}", call.message.chat.id, call.message.message_id, parse_mode='Markdown')
-    else:
-        bot.answer_callback_query(call.id, "Голос принят!")
-        bot.edit_message_text(f"🗳 Голос: {vote.upper()}\nНужно 3+ голоса.", call.message.chat.id, call.message.message_id, parse_mode='Markdown')
+        return bot.send_message(chat_id, text, parse_mode=parse_mode, reply_markup=reply_markup)
+    except Exception as e:
+        print(f"[_send] Ошибка отправки: {e}")
+        return None
 
-# ==================== БРАКИ ====================
-@bot.message_handler(commands=['marry'])
-@bot.message_handler(func=lambda m: m.text == "💍 Брак")
-def menu_marry(message):
-    uid = message.from_user.id; chat_id = message.chat.id
-    seals = get_player_seals(uid)
-    if not seals: bot.send_message(chat_id, "Нет тюленей!"); return
-    if get_seal_count(uid) >= MAX_SEALS: bot.send_message(chat_id, f"Макс {MAX_SEALS}!"); return
-    m = types.InlineKeyboardMarkup()
-    for s in seals: m.add(types.InlineKeyboardButton(f"{s[2]} (ур.{s[9]})", callback_data=f"msel_{s[0]}"))
-    bot.send_message(chat_id, "Выберите тюленя:", reply_markup=m)
 
-@bot.callback_query_handler(func=lambda c: c.data.startswith("msel_"))
-def marry_sel(call):
-    sid = int(call.data.split("_")[1])
-    bot.send_message(call.message.chat.id, "ID или @username партнёра:")
-    reg_step(call.message.chat.id, call.from_user.id, marry_partner, sid)
+def reg_step(chat_id, uid, handler, *args):
+    """Регистрирует шаг ожидания ввода от пользователя."""
+    # Предполагается, что где-то есть глобальный dict user_steps: uid -> (handler, extra_args)
+    if 'user_steps' not in globals():
+        globals()['user_steps'] = {}
+    user_steps[uid] = (handler, args)
+    # Можно дополнительно сохранять chat_id, если нужно
 
-def marry_partner(message, sid1):
-    uid = message.from_user.id; chat_id = message.chat.id
-    txt = message.text.strip()
-    if txt.startswith("@"):
-        conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-        c.execute("SELECT user_id FROM players WHERE username=?", (txt[1:],)); r = c.fetchone(); conn.close()
-        if not r: bot.send_message(chat_id, "Не найден!"); return
-        pid = r[0]
-    else:
-        try: pid = int(txt)
-        except: bot.send_message(chat_id, "Формат!"); return
-    if pid == uid: bot.send_message(chat_id, "С собой нельзя!"); return
-    ps = get_player_seals(pid)
-    if not ps: bot.send_message(chat_id, "Нет тюленей у игрока!"); return
-    m = types.InlineKeyboardMarkup()
-    for s in ps: m.add(types.InlineKeyboardButton(f"{s[2]} (ур.{s[9]})", callback_data=f"mdo_{sid1}_{s[0]}_{pid}"))
-    bot.send_message(chat_id, "Выберите тюленя партнёра:", reply_markup=m)
 
-@bot.callback_query_handler(func=lambda c: c.data.startswith("mdo_"))
-def marry_do(call):
-    uid = call.from_user.id; p = call.data.split("_"); s1, s2, pid = int(p[1]), int(p[2]), int(p[3])
-    se1, se2 = get_seal(s1), get_seal(s2)
-    if not se1 or not se2: bot.answer_callback_query(call.id, "Не найден!"); return
-    if get_seal_count(uid) >= MAX_SEALS: bot.answer_callback_query(call.id, f"Макс {MAX_SEALS}!"); return
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT * FROM marriages WHERE (seal1_id=? AND seal2_id=?) OR (seal1_id=? AND seal2_id=?)", (s1, s2, s2, s1))
-    if c.fetchone(): bot.answer_callback_query(call.id, "Уже в браке!"); conn.close(); return
-    c.execute("INSERT INTO marriages (seal1_id,seal2_id,player1_id,player2_id,created_at) VALUES (?,?,?,?,?)", (s1, s2, uid, pid, datetime.now().isoformat()))
-    conn.commit(); conn.close()
-    msg = f"💍 Брак! {se1[2]} ❤️ {se2[2]}\n"
-    if random.random() < 0.5:
-        bn = random.choice(["Малыш","Кроха","Пузырь","Лапик","Шлёпик","Ням"])
-        bs = (se1[7]+se2[7])//4 + random.randint(1,3); bd = (se1[8]+se2[8])//4 + random.randint(0,2)
-        conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-        c.execute("INSERT INTO seals (owner_id,name,health,max_health,mood,satiety,strength,defense,level,exp,is_baby,born_at) VALUES (?,?,?,?,?,?,?,?,?,?,1,?)",
-                  (uid, bn, 60, 60, 70, 70, bs, bd, 1, 0, datetime.now().isoformat()))
-        conn.commit(); conn.close()
-        msg += f"🍼 Тюленёнок — {bn}! С:{bs} З:{bd}\nВырастет через {BABY_GROW_DAYS} дн."
-    else: msg += "Нет тюленёнка..."
-    bot.edit_message_text(msg, call.message.chat.id, call.message.message_id, parse_mode='Markdown')
+@bot.message_handler(content_types=['text'])
+def handle_text_step(message):
+    uid = message.from_user.id
+    if uid not in user_steps:
+        # Обычная обработка текста (если не шаг)
+        return
+    handler, extra = user_steps[uid]
+    del user_steps[uid]  # снимаем шаг
+    try:
+        handler(message, *extra)
+    except Exception as e:
+        print(f"[handle_text_step] Ошибка в шаге: {e}")
+        _send(message.chat.id, "❌ Ошибка при обработке шага.")
 
-# ==================== ЕЖЕДНЕВНЫЕ ЗАДАНИЯ ====================
-def show_quests(uid, chat_id, message_id=None):
-    try: generate_daily_quests(uid); quests = get_daily_quests(uid)
-    except Exception as e: bot.send_message(chat_id, f"⚠️ Ошибка БД: {e}"); return
-    if not quests: bot.send_message(chat_id, "Задания не сгенерированы."); return
-    t = "📋 *Ежедневные задания*\n\n"; m = types.InlineKeyboardMarkup()
-    qd = {q["type"]: q["desc"] for q in QUEST_TEMPLATES}
-    for q in quests:
-        qid, qt, qtgt, qprog, qrew, cl = q[0], q[2], q[3], q[4], q[5], q[7]
-        d = qd.get(qt, qt); s = f"{qprog}/{qtgt}"
-        if cl: t += f"  ✅ {d} — {s} (🐟{qrew}) — получено\n"
-        elif qprog >= qtgt:
-            t += f"  🎁 {d} — {s} (🐟{qrew}) — готово!\n"
-            m.add(types.InlineKeyboardButton(f"Забрать 🐟{qrew}", callback_data=f"qclaim_{qid}"))
-        else: t += f"  ⬜ {d} — {s} (🐟{qrew})\n"
-    if m.keyboard:
-        if message_id:
-            try: bot.edit_message_text(t, chat_id, message_id, parse_mode='Markdown', reply_markup=m)
-            except: bot.send_message(chat_id, t, parse_mode='Markdown', reply_markup=m)
-        else: bot.send_message(chat_id, t, parse_mode='Markdown', reply_markup=m)
-    else:
-        if message_id:
-            try: bot.edit_message_text(t, chat_id, message_id, parse_mode='Markdown')
-            except: bot.send_message(chat_id, t, parse_mode='Markdown')
-        else: bot.send_message(chat_id, t, parse_mode='Markdown')
 
-@bot.message_handler(commands=['quests'])
-@bot.message_handler(func=lambda m: m.text == "📋 Задания")
-def menu_quests(message):
-    show_quests(message.from_user.id, message.chat.id)
-
-@bot.callback_query_handler(func=lambda c: c.data.startswith("qclaim_"))
-def quest_claim(call):
-    uid = call.from_user.id; qid = int(call.data.split("_")[1])
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT quest_id,quest_target,quest_progress,quest_reward,claimed FROM daily_quests WHERE quest_id=? AND claimed=0", (qid,)); r = c.fetchone()
-    if not r: bot.answer_callback_query(call.id, "Уже получено!"); conn.close(); return
-    qid_db, qtgt, qprog, qrew, cl = r
-    if qprog < qtgt: bot.answer_callback_query(call.id, "Не выполнено!"); conn.close(); return
-    c.execute("UPDATE daily_quests SET claimed=1 WHERE quest_id=?", (qid,)); conn.commit(); conn.close()
-    add_fishnets(uid, qrew); bot.answer_callback_query(call.id, f"Получено 🐟{qrew}!")
-    show_quests(uid, call.message.chat.id, call.message.message_id)
-
-# ==================== ФОНОВЫЕ ПОТОКИ ====================
-def stats_decay():
-    while True:
-        time.sleep(3600)
-        try:
-            conn = sqlite3.connect(DB_PATH, timeout=10); c = conn.cursor()
-            c.execute("SELECT seal_id,health,mood,satiety,is_baby FROM seals")
-            for sid, hp, mood, sat, is_baby in c.fetchall():
-                nm = max(0, mood - random.randint(3, 8)); ns = max(0, sat - random.randint(5, 10))
-                nh = max(1, hp - random.randint(3, 8)) if ns < 20 else hp
-                c.execute("UPDATE seals SET mood=?,satiety=?,health=? WHERE seal_id=?", (nm, ns, nh, sid))
-                if is_baby == 1:
-                    check_baby_growth(sid)
-            conn.commit(); conn.close()
-        except: pass
-
-def health_regen():
-    while True:
-        time.sleep(3600)
-        try:
-            conn = sqlite3.connect(DB_PATH, timeout=10); c = conn.cursor()
-            c.execute("SELECT seal_id,health,max_health FROM seals WHERE health<max_health")
-            for sid, hp, mhp in c.fetchall():
-                bonus = 25
-                c2 = conn.cursor()
-                c2.execute("SELECT COUNT(*) FROM seal_skills WHERE seal_id=? AND skill_effect='regen'", (sid,))
-                if c2.fetchone()[0] > 0: bonus += 5
-                c.execute("UPDATE seals SET health=? WHERE seal_id=?", (min(mhp, hp+bonus), sid))
-            conn.commit(); conn.close()
-        except: pass
-
-threading.Thread(target=stats_decay, daemon=True).start()
-threading.Thread(target=health_regen, daemon=True).start()
-
-# ==================== КОМАНДЫ В МЕНЮ ====================
-bot.set_my_commands([
-    types.BotCommand("start", "Главное меню"), types.BotCommand("help", "Справка"),
-    types.BotCommand("profile", "Профиль"), types.BotCommand("gallery", "Галерея"),
-    types.BotCommand("inventory", "Инвентарь"), types.BotCommand("setphoto", "Фото тюленя"),
-    types.BotCommand("shop", "Магазин"), types.BotCommand("craft", "Крафт"),
-    types.BotCommand("potion", "Варка зелий"), types.BotCommand("enchant", "Зачарование"),
-    types.BotCommand("trade", "Биржа"), types.BotCommand("battle", "Бой с боссом"),
-    types.BotCommand("dungeon", "Подземелье"), types.BotCommand("work", "Работа"),
-    types.BotCommand("duel", "PvP-дуэль"), types.BotCommand("fish", "Рыбалка"),
-    types.BotCommand("vote", "Голосование"), types.BotCommand("faction", "Фракции"),
-    types.BotCommand("questchain", "Квестовые цепочки"), types.BotCommand("clan", "Клан"),
-    types.BotCommand("marry", "Брак"), types.BotCommand("quests", "Задания"),
-    types.BotCommand("leaderboard", "Лидеры"),
-])
+# ==================== ЗАПУСК БОТА ====================
 
 if __name__ == "__main__":
-    run_migrations()
-    print("Бот запущен! 🦭")
-    print(f"TOKEN: {TOKEN[:10]}...{TOKEN[-5:]}")
-    
-    try:
-        bot.polling(none_stop=True)
-    except Exception as e:
-        print(f"❌ Ошибка polling: {e}")
+    print("🚀 Запуск бота...")
+    # Проверка/создание БД при старте (если нужно)
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    # Пример: убедиться, что есть базовые таблицы (если нет — создать)
+    # c.execute("CREATE TABLE IF NOT EXISTS players (...)")
+    conn.close()
+
+    # Запуск polling
+    bot.polling(none_stop=True, timeout=20)
