@@ -2015,40 +2015,37 @@ def duel_seal(call):
     csk = get_seal_skills(csid); osk = get_seal_skills(osid)
     cps, cpd, cpdd, cprg, cpsp, cptn = get_active_potion_mods(csid)
     ops, opd, opdd, oprg, opsp, optn = get_active_potion_mods(osid)
-        # Было: chp = ceh; ohp = oeh
-    chp = min(cseal[3], ceh)   # ИСПРАВЛЕНО: текущее HP, ограниченное эффективным максимумом
-    ohp = min(oseal[3], oeh)   # ИСПРАВЛЕНО
-
+    chp = min(cseal[3], ceh)
+    ohp = min(oseal[3], oeh)
     log = [f"🤺 *Дуэль: {cseal[2]} vs {oseal[2]}*\n",
-           f"{cseal[2]}: ❤️{ceh} 💪{ces} 🛡️{ced}", f"{oseal[2]}: ❤️{oeh} 💪{oes} 🛡️{oed}\n"]
-        if ps or pd or ptn:
+           f"{cseal[2]}: ❤️{cseal[3]}/{ceh} 💪{ces} 🛡️{ced}", f"{oseal[2]}: ❤️{oseal[3]}/{oeh} 💪{oes} 🛡️{oed}\n"]
+    if cps or cpd or cptn:
         parts = []
-        if ps: parts.append(f"+{ps}💪")
-        if pd: parts.append(f"+{pd}🛡️")
-        if ptn: parts.append(f"+{int(ptn*100)}% урон 😤")
-        log.append(f"🧪 Активное зелье: {' '.join(parts)}")
-        if ps or pd or ptn:
+        if cps: parts.append(f"+{cps}💪")
+        if cpd: parts.append(f"+{cpd}🛡️")
+        if cptn: parts.append(f"+{int(cptn*100)}% урон 😤")
+        log.append(f"🧪 {cseal[2]}: {' '.join(parts)}")
+    if ops or opd or optn:
         parts = []
-        if ps: parts.append(f"+{ps}💪")
-        if pd: parts.append(f"+{pd}🛡️")
-        if ptn: parts.append(f"+{int(ptn*100)}% урон 😤")
-        log.append(f"🧪 Активное зелье: {' '.join(parts)}")
-
+        if ops: parts.append(f"+{ops}💪")
+        if opd: parts.append(f"+{opd}🛡️")
+        if optn: parts.append(f"+{int(optn*100)}% урон 😤")
+        log.append(f"🧪 {oseal[2]}: {' '.join(parts)}")
     rnd = 0; rw = 0
-       while chp > 0 and ohp > 0:
+    while chp > 0 and ohp > 0:
         rnd += 1
         if rnd > 15: break
         cd = ces
         if any(s["effect"]=="berserk" for s in csk) and chp < ceh*0.3: cd = int(cd*1.5)
         if random.random() < sum(0.15 for s in csk if s["effect"]=="crit_15"): cd *= 2; log.append("⚡ Крит!")
         cd = max(1, cd - oed + random.randint(-3,5))
-        if cptn: cd = int(cd * (1 + cptn))  # ИСПРАВЛЕНО: ярость +50% урона
+        if cptn: cd = int(cd * (1 + cptn))
         ohp -= cd
         log.append(f"Р{rnd}: {cseal[2]} →{cd} ({oseal[2]} {max(0,ohp)}❤️)")
         if ohp <= 0: break
         if cpsp > 0 and ohp > 0 and random.random() < 0.5:
             d2 = max(1, ces - oed + random.randint(-3,5))
-            if cptn: d2 = int(d2 * (1 + cptn))  # ярость на доп. атаку
+            if cptn: d2 = int(d2 * (1 + cptn))
             ohp -= d2; log.append(f"💨 Скорость! →{d2}")
         if ohp <= 0: break
         od = oes
@@ -2057,12 +2054,11 @@ def duel_seal(call):
         cdodge = cpdd / 100.0
         if random.random() < cdodge: log.append("💨 Уклонение!"); continue
         od = max(1, od - ced + random.randint(-3,5))
-        if optn: od = int(od * (1 + optn))  # ИСПРАВЛЕНО: ярость +50% урона
+        if optn: od = int(od * (1 + optn))
         chp -= od
         log.append(f"{oseal[2]} →{od} ({cseal[2]} {max(0,chp)}❤️)")
         if cprg > 0: chp = min(ceh, chp + cprg)
         if oprg > 0: ohp = min(oeh, ohp + oprg)
-
     decrement_potion_use(csid); decrement_potion_use(osid)
     winner_id = 0
     if ohp <= 0:
@@ -2074,9 +2070,8 @@ def duel_seal(call):
         rw = min(get_fishnets(duel[1])//10, 100); add_fishnets(duel[2], rw); add_fishnets(duel[1], -rw)
         log.append(f"💰 Награда: 🐟{rw}"); update_quest_chain(duel[2], "duel_win", 1)
     else: log.append("\n🤝 Ничья!")
-        # Было: update_seal(csid, health=max(1,chp)); update_seal(osid, health=max(1,ohp))
-    update_seal(csid, health=min(ceh, max(1, chp)))   # ИСПРАВЛЕНО: cap = ceh
-    update_seal(osid, health=min(oeh, max(1, ohp)))   # ИСПРАВЛЕНО: cap = oeh
+    update_seal(csid, health=min(ceh, max(1, chp)))
+    update_seal(osid, health=min(oeh, max(1, ohp)))
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("UPDATE duels SET status='completed',winner_id=?,reward=? WHERE duel_id=?", (winner_id, rw, did))
     conn.commit(); conn.close()
