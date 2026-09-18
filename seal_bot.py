@@ -1885,15 +1885,19 @@ def dng_atk(call):
         m = types.InlineKeyboardMarkup()
         m.add(types.InlineKeyboardButton("➡️ Дальше", callback_data=f"dn_{sid}_{fl}_{next_idx}"))
         m.add(types.InlineKeyboardButton("🏃 Выйти", callback_data=f"df_{sid}_{fl}"))
-        bot.edit_message_text("\n".join(log), call.message.chat.id, call.message.message_id, parse_mode='Markdown')
+        full_log = "\n".join(log)
+        try: bot.delete_message(call.message.chat.id, call.message.message_id)
+        except: pass
+        bot.send_message(call.message.chat.id, full_log, parse_mode='Markdown', reply_markup=m)
     elif shp <= 0:
         update_seal(sid, health=1, mood=max(0, seal[5]-30)); log.append(f"\n💀 {seal[2]} пал...")
         conn = sqlite3.connect(DB_PATH); c = conn.cursor()
         c.execute("UPDATE dungeon_runs SET active=0 WHERE user_id=?", (uid,))
         conn.commit(); conn.close()
-        bot.edit_message_text("\n".join(log), call.message.chat.id, call.message.message_id, parse_mode='Markdown')
-
-
+        full_log = "\n".join(log)
+        try: bot.delete_message(call.message.chat.id, call.message.message_id)
+        except: pass
+        bot.send_message(call.message.chat.id, full_log, parse_mode='Markdown')
 @bot.callback_query_handler(func=lambda c: c.data.startswith("dn_"))
 def dng_next(call):
     p = call.data.split("_"); dng_floor(call, int(p[1]), int(p[2]), int(p[3]))
