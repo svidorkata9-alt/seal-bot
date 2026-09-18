@@ -2120,177 +2120,386 @@ def do_battle(call):
 @bot.message_handler(commands=['dungeon'])
 @bot.message_handler(func=lambda m: m.text == "🏰 Подземелье")
 def menu_dungeon(message):
-    uid = message.from_user.id; chat_id = message.chat.id
+    uid = message.from_user.id
+    chat_id = message.chat.id
     seals = get_player_seals(uid)
-    if not seals: bot.send_message(chat_id, "Нет тюленей!"); return
+    if not seals:
+        bot.send_message(chat_id, "Нет тюленей!")
+        return
     m = types.InlineKeyboardMarkup()
     for s in seals:
-        if s[11] == 1: continue
-        m.add(types.InlineKeyboardButton(f"{s[2]} (ур.{s[9]})", callback_data=f"ds_{s[0]}"))
-    if not m.keyboard: bot.send_message(chat_id, "Все малыши!"); return
+        # Пропускаем тюленей, которые нельзя брать в подземелье (флаг в индексе 11)
+        if s == 1:
+            continue
+        m.add(types.InlineKeyboardButton(f"{s} (ур.{s})", callback_data=f"ds_{s}"))
+    if not m.keyboard:
+        bot.send_message(chat_id, "Все малыши не готовы к бою!")
+        return
     bot.send_message(chat_id, "🏰 Выберите тюленя (10 этажей, сундуки!):", reply_markup=m)
+
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("ds_"))
 def dng_start(call):
-    uid = call.from_user.id; sid = int(call.data.split("_")[1]); seal = get_seal(sid)
-    if not seal: return
-    if seal[1] != uid:  # ИСПРАВЛЕНО: проверка владельца
-        bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True); return
-    if seal[3] <= 20: bot.answer_callback_query(call.id, "HP<20!"); return
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("DELETE FROM dungeon_runs WHERE user_id=?", (uid,))
-    c.execute("INSERT INTO dungeon_runs (user_id,seal_id,current_floor,active,current_monster) VALUES (?,?,1,1,0)", (uid, sid))
-    conn.commit(); conn.close()
+    uid = call.from_user.id
+    try:
+        sid = int(call.data.split("_"))
+    except ValueError:
+        bot.answer_callback_query(call.id, "Ошибка данных!", show_alert=True)
+        return
+
+    seal = get_seal(sid)
+    if not seal:
+        bot.answer_callback_query(call.id, "Тюлень не найден!", show_alert=True)
+        return
+
+    if seal != uid:
+        bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True)
+        return
+
+    if seal <= 20:
+        bot.answer_callback_query(call.id, "HP < 20! Тюлень слишком слаб.", show_alert=True)
+        return
+
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("DELETE FROM dungeon_runs WHERE user_id=?", (uid,))
+        c.execute(
+            "INSERT INTO dungeon_runs (user_id, seal_id, current_floor, active, current_monster) "
+            "VALUES (?, ?, 1, 1, 0)",
+            (uid, sid)
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"DB error in dng_start: {e}")
+        bot.answer_callback_query(call.id, "Ошибка базы данных!", show_alert=True)
+        return
+
     dng_floor(call, sid, 1, 0)
+
 
 def dng_floor(call, sid, fl, mon_idx):
     seal = get_seal(sid)
-    if not seal: return
-    config = DUNGEON_FLOORS_CONFIG[min(fl-1, len(DUNGEON_FLOORS_CONFIG)-1)]
+    if not seal:
+        return
+
+    # Защита от выхода за границы конфигурации
+    if fl < 1 or fl > len(DUNGEON_FLOORS_CONFIG):
+        bot.answer_callback_query(call.id, "Ошибка этажа!", show_alert=True)
+        return
+
+    config = DUNGEON_FLOORS_CONFIG[min(fl - 1, len(DUNGEON_FLOORS_CONFIG) - 1)]
     total_mons = config["monsters"]
+
+    # Если все монстры на этаже пройдены — выдаем сундук
     if mon_idx >= total_mons:
         rarity = config["chest_rarity"]
         chest_name = f"Сундук [{rarity}] 📦"
         add_to_inv(call.from_user.id, chest_name, "chest", 1)
         update_quest_chain(call.from_user.id, "dungeon_floor", fl)
+
         if fl >= DUNGEON_TOTAL_FLOORS:
+            # Финальный этаж: опыт, награды, квесты
             eg = int((100 + fl * 30) * get_exp_mult())
-            s = get_seal(sid); update_seal(sid, exp=s[10]+eg); lv = check_levelup(sid)
-            t = f"🏆 *Подземелье пройдено!*\n🎁 {chest_name}\n📈 +{eg}оп"
-            if lv: t += f"\n🎉 Ур.{lv}!"
+            s = get_seal(sid)
+            if s:
+                update_seal(sid, exp=s + eg)
+                lv = check_levelup(sid)
+            else:
+                lv = 0
+
+            t = f"🏆 *Подземелье пройдено!*\n🎁 {chest_name}\n📈 +{eg} оп"
+            if lv:
+                t += f"\n🎉 Ур.{lv}!"
+
             update_quest_progress(call.from_user.id, "dungeon", 1)
             update_quest_chain(call.from_user.id, "dungeon_complete", 1)
+
             pl = get_player(call.from_user.id)
-            if pl and pl[5] == "explorers": add_faction_rep(call.from_user.id, 3)
-            conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-            c.execute("UPDATE dungeon_runs SET active=0 WHERE user_id=?", (call.from_user.id,))
-            conn.commit(); conn.close()
-            try: bot.edit_message_text(t, call.message.chat.id, call.message.message_id, parse_mode='Markdown')
-            except: bot.send_message(call.message.chat.id, t, parse_mode='Markdown')
+            if pl and pl == "explorers":
+                add_faction_rep(call.from_user.id, 3)
+
+            try:
+                conn = sqlite3.connect(DB_PATH)
+                c = conn.cursor()
+                c.execute("UPDATE dungeon_runs SET active=0 WHERE user_id=?", (call.from_user.id,))
+                conn.commit()
+                conn.close()
+            except Exception as e:
+                print(f"DB error in final floor: {e}")
+
+            try:
+                bot.edit_message_text(t, call.message.chat.id, call.message.message_id, parse_mode='Markdown')
+            except Exception:
+                bot.send_message(call.message.chat.id, t, parse_mode='Markdown')
         else:
+            # Обычный этаж пройден: переход на следующий
             nf = fl + 1
             t = f"✅ Этаж {fl} пройден!\n🎁 {chest_name}\nОткрыт этаж {nf}!"
             m = types.InlineKeyboardMarkup()
             m.add(types.InlineKeyboardButton("➡️ Дальше", callback_data=f"dn_{sid}_{nf}_0"))
             m.add(types.InlineKeyboardButton("🏃 Выйти", callback_data=f"df_{sid}_{fl}"))
-            conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-            c.execute("UPDATE dungeon_runs SET current_monster=0 WHERE user_id=?", (call.from_user.id,))
-            conn.commit(); conn.close()
-            bot.edit_message_text(t, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=m)
+
+            try:
+                conn = sqlite3.connect(DB_PATH)
+                c = conn.cursor()
+                c.execute("UPDATE dungeon_runs SET current_monster=0 WHERE user_id=?", (call.from_user.id,))
+                conn.commit()
+                conn.close()
+            except Exception as e:
+                print(f"DB error in floor clear: {e}")
+
+            try:
+                bot.edit_message_text(t, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=m)
+            except Exception:
+                bot.send_message(call.message.chat.id, t, parse_mode='Markdown', reply_markup=m)
         return
+
+    # Обычный ход: показываем статистику и кнопки
     mon = get_floor_monster(fl, mon_idx)
+    if not mon:
+        bot.answer_callback_query(call.id, "Монстр не найден!", show_alert=True)
+        return
+
     es, ed, eh = get_effective_stats(sid)
-    t = f"🏰 *Этаж {fl}/{DUNGEON_TOTAL_FLOORS}* | Монстр {mon_idx+1}/{total_mons}\n\n"
-    t += f"🦭 {seal[2]}: ❤️{seal[3]}/{eh} 💪{es} 🛡️{ed}\n{mon['name']}: ❤️{mon['hp']} 💪{mon['str']} 🛡️{mon['def']}\n"
+    t = f"🏰 *Этаж {fl}/{DUNGEON_TOTAL_FLOORS}* | Монстр {mon_idx + 1}/{total_mons}\n\n"
+    t += f"🦭 {seal}: ❤️{seal}/{eh} 💪{es} 🛡️{ed}\n"
+    t += f"{mon['name']}: ❤️{mon['hp']} 💪{mon['str']} 🛡️{mon['def']}\n"
+
     m = types.InlineKeyboardMarkup()
     m.add(types.InlineKeyboardButton("⚔️ Атаковать", callback_data=f"da_{sid}_{fl}_{mon_idx}"))
     m.add(types.InlineKeyboardButton("🏃 Сбежать", callback_data=f"df_{sid}_{fl}"))
-    bot.edit_message_text(t, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=m)
+
+    try:
+        bot.edit_message_text(t, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=m)
+    except Exception:
+        bot.send_message(call.message.chat.id, t, parse_mode='Markdown', reply_markup=m)
+
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("da_"))
 def dng_atk(call):
-    uid = call.from_user.id; p = call.data.split("_"); sid = int(p[1]); fl = int(p[2]); mon_idx = int(p[3])
+    uid = call.from_user.id
+    try:
+        p = call.data.split("_")
+        if len(p) < 4:
+            bot.answer_callback_query(call.id, "Ошибка данных!", show_alert=True)
+            return
+        sid = int(p)
+        fl = int(p)
+        mon_idx = int(p)
+    except (ValueError, IndexError):
+        bot.answer_callback_query(call.id, "Ошибка формата данных!", show_alert=True)
+        return
+
     seal = get_seal(sid)
-    if not seal: return
-    if seal[1] != uid:  # ИСПРАВЛЕНО: проверка владельца
-        bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True); return
+    if not seal:
+        bot.answer_callback_query(call.id, "Тюлень не найден!", show_alert=True)
+        return
+
+    if seal != uid:
+        bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True)
+        return
+
     mon = get_floor_monster(fl, mon_idx)
+    if not mon:
+        bot.answer_callback_query(call.id, "Монстр не найден!", show_alert=True)
+        return
+
     es, ed, eh = get_effective_stats(sid)
     skills = get_seal_skills(sid)
     ps, pd, pdd, prg, psp, ptn = get_active_potion_mods(sid)
-    shp = min(seal[3], eh)
-    log = [f"⚔️ Этаж {fl}: {seal[2]} vs {mon['name']}"]
+    shp = min(seal, eh)
+    talent = get_seal_talent(sid)
+    healer_used = False
+
+    log = [f"⚔️ Этаж {fl}: {seal} vs {mon['name']}"]
     if ps or pd or ptn:
         parts = []
-        if ps: parts.append(f"+{ps}💪")
-        if pd: parts.append(f"+{pd}🛡️")
-        if ptn: parts.append(f"+{int(ptn*100)}% урон 😤")
+        if ps:
+            parts.append(f"+{ps}💪")
+        if pd:
+            parts.append(f"+{pd}🛡️")
+        if ptn:
+            parts.append(f"+{int(ptn * 100)}% урон 😤")
         log.append(f"🧪 Зелье: {' '.join(parts)}")
-        talent = get_seal_talent(sid)
-    healer_used = False
+
+    # ЦИКЛ БОЯ
     while shp > 0 and mon["hp"] > 0:
+        # Атака тюленя
         d = es
-        if any(s["effect"]=="berserk" for s in skills) and shp < eh*0.3: d = int(d*1.5)
-        if random.random() < sum(0.15 for s in skills if s["effect"]=="crit_15"): d *= 2; log.append("⚡ Крит!")
+        if any(s["effect"] == "berserk" for s in skills) and shp < eh * 0.3:
+            d = int(d * 1.5)
+
+        if random.random() < sum(0.15 for s in skills if s["effect"] == "crit_15"):
+            d *= 2
+            log.append("⚡ Крит!")
+
         d = max(1, d - mon["def"] + random.randint(-2, 5))
-        if ptn: d = int(d * (1 + ptn))
+        if ptn:
+            d = int(d * (1 + ptn))
+
         mon["hp"] -= d
+
         if talent:
             extra = talent_on_attack(sid, d, talent)
             if extra > 0:
                 mon["hp"] -= extra
                 log.append(f"✨ Талант: +{extra}!")
 
-        log.append(f"{seal[2]} →{d} (монстр {max(0, mon['hp'])}❤️)")
-        if mon["hp"] <= 0: break
-        if psp > 0 and mon["hp"] > 0 and random.random() < 0.5:
+        log.append(f"{seal} →{d} (монстр {max(0, mon['hp'])}❤️)")
+
+        if mon["hp"] <= 0:
+            break
+
+        # Доп. атаки: скорость и двойной удар
+        if psp > 0 and random.random() < 0.5:
             d2 = max(1, es - mon["def"] + random.randint(-2, 5))
-            if ptn: d2 = int(d2 * (1 + ptn))
+            if ptn:
+                d2 = int(d2 * (1 + ptn))
             mon["hp"] -= d2
             log.append(f"💨 Скорость! →{d2}")
-        if mon["hp"] <= 0: break
-        if random.random() < sum(0.10 for s in skills if s["effect"]=="double_strike") and mon["hp"] > 0:
+
+        if mon["hp"] <= 0:
+            break
+
+        if random.random() < sum(0.10 for s in skills if s["effect"] == "double_strike"):
             d2 = max(1, es - mon["def"] + random.randint(-2, 5))
-            if ptn: d2 = int(d2 * (1 + ptn))
-            mon["hp"] -= d2; log.append(f"⚔️ Двойной! →{d2}")
-        if mon["hp"] <= 0: break
-        dodge_chance = sum(0.10 for s in skills if s["effect"]=="dodge_10") + pdd / 100.0
-        if random.random() < dodge_chance: log.append("💨 Уклонение!"); continue
+            if ptn:
+                d2 = int(d2 * (1 + ptn))
+            mon["hp"] -= d2
+            log.append(f"⚔️ Двойной! →{d2}")
+
+        if mon["hp"] <= 0:
+            break
+
+        # Ход монстра
+        dodge_chance = sum(0.10 for s in skills if s["effect"] == "dodge_10") + pdd / 100.0
+        if random.random() < dodge_chance:
+            log.append("💨 Уклонение!")
+            continue
+
         dm = max(1, mon["str"] - ed + random.randint(-1, 4))
-        if talent: dm = talent_on_defend(dm, talent)
-        if any(s["effect"]=="dmg_reduce_10" for s in skills): dm = int(dm*0.9)
+        if talent:
+            dm = talent_on_defend(dm, talent)
+        if any(s["effect"] == "dmg_reduce_10" for s in skills):
+            dm = int(dm * 0.9)
+
         shp -= dm
-        log.append(f"{mon['name']} →{dm} ({seal[2]} {max(0, shp)}❤️)")
-        if prg > 0: shp = min(eh, shp + prg)
-    if talent and not healer_used:
+        log.append(f"{mon['name']} →{dm} ({seal} {max(0, shp)}❤️)")
+
+        # Пассивные эффекты восстановления (срабатывают каждый ход после получения урона)
+        if prg > 0:
+            shp = min(eh, shp + prg)
+
+        if talent and not healer_used:
             ht = talent_heal_battle(eh, talent)
             if ht > 0:
-                shp = min(eh, shp + ht); healer_used = True
+                shp = min(eh, shp + ht)
+                healer_used = True
                 log.append(f"💚 Талант: +{ht}HP!")
-        ls = sum(1 for s in skills if s["effect"]=="lifesteal_5")
-        if ls: heal = int(dm*0.05*ls); shp = min(eh, shp+heal)
-        if any(s["effect"]=="thorns" for s in skills): mon["hp"] -= int(dm*0.2)
+
+        ls = sum(1 for s in skills if s["effect"] == "lifesteal_5")
+        if ls:
+            heal = int(dm * 0.05 * ls)
+            if heal > 0:
+                shp = min(eh, shp + heal)
+                log.append(f"🩸 Лайфстил: +{heal}HP!")
+
+        if any(s["effect"] == "thorns" for s in skills):
+            thorns_dmg = int(dm * 0.2)
+            if thorns_dmg > 0:
+                mon["hp"] -= thorns_dmg
+                log.append(f"🌵 Шипы: -{thorns_dmg}HP монстру!")
+
     decrement_potion_use(sid)
+
+    # Обработка результата боя
     if mon["hp"] <= 0:
         update_seal(sid, health=min(eh, max(1, shp)))
         log.append("\n✅ Повержен!")
         d = process_drops(uid, mon.get("drops", {}))
-        if d: log.append(f"📦 {', '.join(d)}")
-        conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-        c.execute("UPDATE dungeon_runs SET current_monster=? WHERE user_id=?", (mon_idx+1, uid))
-        conn.commit(); conn.close()
+        if d:
+            log.append(f"📦 {', '.join(d)}")
+
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+            c.execute("UPDATE dungeon_runs SET current_monster=? WHERE user_id=?", (mon_idx + 1, uid))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"DB error in battle win: {e}")
+
         next_idx = mon_idx + 1
-        config = DUNGEON_FLOORS_CONFIG[min(fl-1, len(DUNGEON_FLOORS_CONFIG)-1)]
+        config = DUNGEON_FLOORS_CONFIG[min(fl - 1, len(DUNGEON_FLOORS_CONFIG) - 1)]
         if next_idx >= config["monsters"]:
             log.append("\n🎁 Этаж зачищен!")
+
         m = types.InlineKeyboardMarkup()
         m.add(types.InlineKeyboardButton("➡️ Дальше", callback_data=f"dn_{sid}_{fl}_{next_idx}"))
         m.add(types.InlineKeyboardButton("🏃 Выйти", callback_data=f"df_{sid}_{fl}"))
+
         full_log = "\n".join(log)
-        try: bot.delete_message(call.message.chat.id, call.message.message_id)
-        except: pass
+        try:
+            bot.delete_message(call.message.chat.id, call.message.message_id)
+        except Exception:
+            pass
         bot.send_message(call.message.chat.id, full_log, parse_mode='Markdown', reply_markup=m)
+
     elif shp <= 0:
-        update_seal(sid, health=1, mood=max(0, seal[5]-30)); log.append(f"\n💀 {seal[2]} пал...")
-        conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-        c.execute("UPDATE dungeon_runs SET active=0 WHERE user_id=?", (uid,))
-        conn.commit(); conn.close()
+        update_seal(sid, health=1, mood=max(0, seal - 30))
+        log.append(f"\n💀 {seal} пал...")
+
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+            c.execute("UPDATE dungeon_runs SET active=0 WHERE user_id=?", (uid,))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"DB error in battle loss: {e}")
+
         full_log = "\n".join(log)
-        try: bot.delete_message(call.message.chat.id, call.message.message_id)
-        except: pass
+        try:
+            bot.delete_message(call.message.chat.id, call.message.message_id)
+        except Exception:
+            pass
         bot.send_message(call.message.chat.id, full_log, parse_mode='Markdown')
+
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("dn_"))
 def dng_next(call):
-    p = call.data.split("_"); dng_floor(call, int(p[1]), int(p[2]), int(p[3]))
+    try:
+        p = call.data.split("_")
+        if len(p) < 4:
+            bot.answer_callback_query(call.id, "Ошибка данных!", show_alert=True)
+            return
+        sid = int(p)
+        fl = int(p)
+        mon_idx = int(p)
+        dng_floor(call, sid, fl, mon_idx)
+    except Exception as e:
+        print(f"Error in dng_next: {e}")
+        bot.answer_callback_query(call.id, "Ошибка перехода!", show_alert=True)
+
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("df_"))
 def dng_flee(call):
     uid = call.from_user.id
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("UPDATE dungeon_runs SET active=0 WHERE user_id=?", (uid,))
-    conn.commit(); conn.close()
-    bot.edit_message_text("🏃 Сбежали.", call.message.chat.id, call.message.message_id)
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("UPDATE dungeon_runs SET active=0 WHERE user_id=?", (uid,))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"DB error in flee: {e}")
+
+    try:
+        bot.edit_message_text("🏃 Сбежали.", call.message.chat.id, call.message.message_id)
+    except Exception:
+        bot.send_message(call.message.chat.id, "🏃 Сбежали.")
 
 # ==================== РЫБАЛКА ====================
 fish_active = {}
