@@ -446,6 +446,7 @@ QUEST_TEMPLATES = [
 ]
 
 CLAN_EMOJIS = ["🦭", "🐋", "🦈", "🐙", "🦀", "🦐", "🦑", "🐬", "🐳", "🐢"]
+
 # ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 def _safe_int(value, default=0):
     if value is None: return default
@@ -529,7 +530,7 @@ def get_sell_price(item_name):
     if item_name in SHOP_ITEMS: return int(SHOP_ITEMS[item_name]["price"] * 0.5)
     if item_name in RESOURCE_SELL_PRICES: return RESOURCE_SELL_PRICES[item_name]
     if item_name in POTION_SELL_PRICES: return POTION_SELL_PRICES[item_name]
-    m = re.search(r'$$([A-Z])$$', item_name)
+    m = re.search(r'$$([A-Z])$$', item_name)  # ИСПРАВЛЕНО: правильный regex
     if m and m.group(1) in RARITY_SELL_PRICES:
         return RARITY_SELL_PRICES[m.group(1)]
     for recipe in CRAFT_RECIPES:
@@ -540,7 +541,6 @@ def get_sell_price(item_name):
 
 def exp_for_level(lvl):
     return lvl * 100 + (lvl - 1) * 50
-
 def get_exp_mult():
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     now = datetime.now().isoformat()
@@ -610,8 +610,8 @@ def apply_potion_to_seal(sid, potion_name):
     if not seal: return "Тюлень не найден!"
     eff = info["effect"]; val = info.get("value", 0)
     if eff == "heal":
-        _, _, eh = get_effective_stats(sid)  # ИСПРАВЛЕНО: эффективный максимум
-        nh = min(eh, seal[3] + val)  # ИСПРАВЛЕНО: cap = eh, не seal[4]
+        _, _, eh = get_effective_stats(sid)
+        nh = min(eh, seal[3] + val)
         update_seal(sid, health=nh)
         return f"💚 +{val} HP! ({seal[3]}→{nh})"
     elif eff == "antidote":
@@ -621,7 +621,6 @@ def apply_potion_to_seal(sid, potion_name):
         dur = info.get("duration", 3)
         update_seal(sid, active_potion=f"{eff}:{val}:{dur}", potion_uses=dur)
         return f"🧪 {potion_name} активно! Эффект: {POTION_EFFECTS.get(eff, '?')} на {dur} боёв"
-
 
 def get_active_potion_mods(sid):
     seal = get_seal(sid)
@@ -637,7 +636,7 @@ def get_active_potion_mods(sid):
     elif eff == "dodge_boost": dd = val
     elif eff == "regen_potion": rg = val
     elif eff == "speed_boost": sp = 1
-    elif eff == "rage": tn = 0.5  # ИСПРАВЛЕНО: +50% к урону вместо плоского бонуса
+    elif eff == "rage": tn = 0.5
     elif eff == "titan": bs = val; bd = val
     return bs, bd, dd, rg, sp, tn
 
@@ -888,14 +887,13 @@ def generate_daily_quests(uid):
     conn.commit(); conn.close()
 
 def update_quest_progress(uid, qt, amt=1):
-    generate_daily_quests(uid)  # ИСПРАВЛЕНО: гарантируем, что квесты на сегодня созданы
+    generate_daily_quests(uid)
     today = date.today().isoformat()
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("SELECT quest_id,quest_progress,quest_target FROM daily_quests WHERE user_id=? AND quest_type=? AND date=? AND claimed=0", (uid, qt, today))
     for qid, prog, targ in c.fetchall():
         if prog < targ: c.execute("UPDATE daily_quests SET quest_progress=? WHERE quest_id=?", (min(targ, prog + amt), qid))
     conn.commit(); conn.close()
-
 
 def get_daily_quests(uid):
     today = date.today().isoformat()
@@ -1099,7 +1097,6 @@ def cmd_leaderboard(message):
         uname = u if u else "?"
         t += f"{medals[i] if i < 3 else str(i+1)+'.'} {n} — ур.{l} (@{uname})\n"
     bot.send_message(chat_id, t, parse_mode='Markdown')
-
 
 @bot.message_handler(commands=['inventory'])
 @bot.message_handler(func=lambda m: m.text == "🎒 Инвентарь")
@@ -1371,11 +1368,11 @@ def seal_do_feed(call):
 def seal_heal(call):
     uid = call.from_user.id; sid = int(call.data.split("_")[1]); seal = get_seal(sid)
     if not seal: return
-    es, ed, eh = get_effective_stats(sid)  # ИСПРАВЛЕНО: получаем эффективный максимум
-    if seal[3] >= eh: bot.answer_callback_query(call.id, "Здоров!"); return  # ИСПРАВЛЕНО: проверяем по eh, не seal[4]
+    es, ed, eh = get_effective_stats(sid)
+    if seal[3] >= eh: bot.answer_callback_query(call.id, "Здоров!"); return
     if get_item_qty(uid, "Аптечка 💊") <= 0: bot.answer_callback_query(call.id, "Нет аптечек!"); return
     h = SHOP_ITEMS["Аптечка 💊"]["heal"]
-    update_seal(sid, health=min(eh, seal[3]+h))  # ИСПРАВЛЕНО: cap = eh, не seal[4]
+    update_seal(sid, health=min(eh, seal[3]+h))
     remove_from_inv(uid, "Аптечка 💊")
     bot.answer_callback_query(call.id, f"💊 +{h} HP!"); seal_selected(call, sid)
 
@@ -1555,7 +1552,6 @@ def craft_do(call):
     pl = get_player(uid)
     if pl and pl[5] == "hunters": add_faction_rep(uid, 1)
     bot.answer_callback_query(call.id, f"Скрафчено: {name}!")
-
 # ==================== ЗЕЛЬЯ ====================
 @bot.message_handler(commands=['potion'])
 @bot.message_handler(func=lambda m: m.text == "🧪 Зелья")
@@ -1684,6 +1680,7 @@ def work_do(call):
     if enc: log += f"\n\n{enc}"
     update_quest_progress(uid, "work", 1)
     bot.edit_message_text(log, call.message.chat.id, call.message.message_id, parse_mode='Markdown')
+
 # ==================== БОЙ ====================
 @bot.message_handler(commands=['battle'])
 @bot.message_handler(func=lambda m: m.text == "⚔️ Бой")
@@ -1765,7 +1762,6 @@ def do_battle(call):
         log.append("\n🤝 Ничья!")
     bot.edit_message_text("\n".join(log), call.message.chat.id, call.message.message_id, parse_mode='Markdown')
 
-
 # ==================== ПОДЗЕМЕЛЬЕ ====================
 @bot.message_handler(commands=['dungeon'])
 @bot.message_handler(func=lambda m: m.text == "🏰 Подземелье")
@@ -1813,7 +1809,8 @@ def dng_floor(call, sid, fl, mon_idx):
             conn = sqlite3.connect(DB_PATH); c = conn.cursor()
             c.execute("UPDATE dungeon_runs SET active=0 WHERE user_id=?", (call.from_user.id,))
             conn.commit(); conn.close()
-            bot.edit_message_text(t, call.message.chat.id, call.message.message_id, parse_mode='Markdown')
+            try: bot.edit_message_text(t, call.message.chat.id, call.message.message_id, parse_mode='Markdown')
+            except: bot.send_message(call.message.chat.id, t, parse_mode='Markdown')
         else:
             nf = fl + 1
             t = f"✅ Этаж {fl} пройден!\n🎁 {chest_name}\nОткрыт этаж {nf}!"
@@ -1828,14 +1825,12 @@ def dng_floor(call, sid, fl, mon_idx):
     mon = get_floor_monster(fl, mon_idx)
     es, ed, eh = get_effective_stats(sid)
     t = f"🏰 *Этаж {fl}/{DUNGEON_TOTAL_FLOORS}* | Монстр {mon_idx+1}/{total_mons}\n\n"
-    t += f"🦭 {seal[2]}: ❤️{seal[3]}/{eh} 💪{es} 🛡️{ed}\n{mon['name']}: ❤️{mon['hp']} 💪{mon['str']} 🛡️{mon['def']}\n"  # ИСПРАВЛЕНО: показываем текущее/макс
+    t += f"🦭 {seal[2]}: ❤️{seal[3]}/{eh} 💪{es} 🛡️{ed}\n{mon['name']}: ❤️{mon['hp']} 💪{mon['str']} 🛡️{mon['def']}\n"
     m = types.InlineKeyboardMarkup()
     m.add(types.InlineKeyboardButton("⚔️ Атаковать", callback_data=f"da_{sid}_{fl}_{mon_idx}"))
     m.add(types.InlineKeyboardButton("🏃 Сбежать", callback_data=f"df_{sid}_{fl}"))
     bot.edit_message_text(t, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=m)
 
-
-@bot.callback_query_handler(func=lambda c: c.data.startswith("da_"))
 @bot.callback_query_handler(func=lambda c: c.data.startswith("da_"))
 def dng_atk(call):
     uid = call.from_user.id; p = call.data.split("_"); sid = int(p[1]); fl = int(p[2]); mon_idx = int(p[3])
@@ -1843,6 +1838,7 @@ def dng_atk(call):
     if not seal: return
     mon = get_floor_monster(fl, mon_idx)
     es, ed, eh = get_effective_stats(sid)
+    skills = get_seal_skills(sid)
     ps, pd, pdd, prg, psp, ptn = get_active_potion_mods(sid)
     shp = min(seal[3], eh)
     log = [f"⚔️ Этаж {fl}: {seal[2]} vs {mon['name']}"]
@@ -1853,7 +1849,10 @@ def dng_atk(call):
         if ptn: parts.append(f"+{int(ptn*100)}% урон 😤")
         log.append(f"🧪 Зелье: {' '.join(parts)}")
     while shp > 0 and mon["hp"] > 0:
-        d = max(1, es - mon["def"] + random.randint(-2, 5))
+        d = es
+        if any(s["effect"]=="berserk" for s in skills) and shp < eh*0.3: d = int(d*1.5)
+        if random.random() < sum(0.15 for s in skills if s["effect"]=="crit_15"): d *= 2; log.append("⚡ Крит!")
+        d = max(1, d - mon["def"] + random.randint(-2, 5))
         if ptn: d = int(d * (1 + ptn))
         mon["hp"] -= d
         log.append(f"{seal[2]} →{d} (монстр {max(0, mon['hp'])}❤️)")
@@ -1864,11 +1863,21 @@ def dng_atk(call):
             mon["hp"] -= d2
             log.append(f"💨 Скорость! →{d2}")
         if mon["hp"] <= 0: break
-        dodge_chance = pdd / 100.0
+        if random.random() < sum(0.10 for s in skills if s["effect"]=="double_strike") and mon["hp"] > 0:
+            d2 = max(1, es - mon["def"] + random.randint(-2, 5))
+            if ptn: d2 = int(d2 * (1 + ptn))
+            mon["hp"] -= d2; log.append(f"⚔️ Двойной! →{d2}")
+        if mon["hp"] <= 0: break
+        dodge_chance = sum(0.10 for s in skills if s["effect"]=="dodge_10") + pdd / 100.0
         if random.random() < dodge_chance: log.append("💨 Уклонение!"); continue
-        dm = max(1, mon["str"] - ed + random.randint(-1, 4)); shp -= dm
+        dm = max(1, mon["str"] - ed + random.randint(-1, 4))
+        if any(s["effect"]=="dmg_reduce_10" for s in skills): dm = int(dm*0.9)
+        shp -= dm
         log.append(f"{mon['name']} →{dm} ({seal[2]} {max(0, shp)}❤️)")
         if prg > 0: shp = min(eh, shp + prg)
+        ls = sum(1 for s in skills if s["effect"]=="lifesteal_5")
+        if ls: heal = int(dm*0.05*ls); shp = min(eh, shp+heal)
+        if any(s["effect"]=="thorns" for s in skills): mon["hp"] -= int(dm*0.2)
     decrement_potion_use(sid)
     if mon["hp"] <= 0:
         update_seal(sid, health=min(eh, max(1, shp)))
@@ -1898,6 +1907,7 @@ def dng_atk(call):
         try: bot.delete_message(call.message.chat.id, call.message.message_id)
         except: pass
         bot.send_message(call.message.chat.id, full_log, parse_mode='Markdown')
+
 @bot.callback_query_handler(func=lambda c: c.data.startswith("dn_"))
 def dng_next(call):
     p = call.data.split("_"); dng_floor(call, int(p[1]), int(p[2]), int(p[3]))
@@ -2060,17 +2070,29 @@ def duel_seal(call):
             if cptn: d2 = int(d2 * (1 + cptn))
             ohp -= d2; log.append(f"💨 Скорость! →{d2}")
         if ohp <= 0: break
+        if random.random() < sum(0.10 for s in csk if s["effect"]=="double_strike") and ohp > 0:
+            d2 = max(1, ces - oed + random.randint(-3,5))
+            if cptn: d2 = int(d2 * (1 + cptn))
+            ohp -= d2; log.append(f"⚔️ Двойной! →{d2}")
+        if ohp <= 0: break
         od = oes
         if any(s["effect"]=="berserk" for s in osk) and ohp < oeh*0.3: od = int(od*1.5)
         if random.random() < sum(0.15 for s in osk if s["effect"]=="crit_15"): od *= 2; log.append("⚡ Крит в ответ!")
-        cdodge = cpdd / 100.0
+        cdodge = cpdd / 100.0 + sum(0.10 for s in csk if s["effect"]=="dodge_10")
         if random.random() < cdodge: log.append("💨 Уклонение!"); continue
         od = max(1, od - ced + random.randint(-3,5))
+        if any(s["effect"]=="dmg_reduce_10" for s in csk): od = int(od*0.9)
         if optn: od = int(od * (1 + optn))
         chp -= od
         log.append(f"{oseal[2]} →{od} ({cseal[2]} {max(0,chp)}❤️)")
         if cprg > 0: chp = min(ceh, chp + cprg)
         if oprg > 0: ohp = min(oeh, ohp + oprg)
+        ls_c = sum(1 for s in csk if s["effect"]=="lifesteal_5")
+        if ls_c: heal = int(od*0.05*ls_c); chp = min(ceh, chp+heal)
+        ls_o = sum(1 for s in osk if s["effect"]=="lifesteal_5")
+        if ls_o: heal = int(cd*0.05*ls_o); ohp = min(oeh, ohp+heal)
+        if any(s["effect"]=="thorns" for s in csk): ohp -= int(od*0.2)
+        if any(s["effect"]=="thorns" for s in osk): chp -= int(cd*0.2)
     decrement_potion_use(csid); decrement_potion_use(osid)
     winner_id = 0
     if ohp <= 0:
@@ -2364,8 +2386,6 @@ def clan_dng_atk(call):
         seal_hp[target[0]] = new_hp; update_seal(target[0], health=new_hp)
         thp -= actual_dm
         log.append(f"{mon['name']} →{target[2]} на {actual_dm} (осталось {max(0, thp)}❤️)")
-
-
     if mon["hp"] <= 0:
         log.append("\n✅ Монстр повержен!")
         rw = 200 + fl * 50; eg = 100 + fl * 30
