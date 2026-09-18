@@ -1401,7 +1401,6 @@ def seal_rename(call):
 
 def proc_rename(message, sid):
     nn = message.text.strip()
-    if len(nn) > 20: bot.send_message(message.chat.id, "Слишком длинное!"); return
     update_seal(sid, name=nn); bot.send_message(message.chat.id, f"✅ {nn}!")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("equip_"))
