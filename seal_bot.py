@@ -1700,31 +1700,33 @@ def do_battle(call):
     ps, pd, pdd, prg, psp, ptn = get_active_potion_mods(sid)
     boss = random.choice(BOSSES); bn = boss["name"]
     bhp = random.randint(60,100) + seal[9]*10; bstr = random.randint(8,15) + seal[9]*2; bdef = random.randint(3,8) + seal[9]
-    log = [f"⚔️ *{seal[2]} vs {bn}*\n", f"{seal[2]}: ❤️{seal[3]}/{eh} 💪{es} 🛡️{ed}", f"{bn}: ❤️{bhp} 💪{bstr} 🛡️{bdef}\n"]  # ИСПРАВЛЕНО: показываем текущее HP
+    log = [f"⚔️ *{seal[2]} vs {bn}*\n", f"{seal[2]}: ❤️{seal[3]}/{eh} 💪{es} 🛡️{ed}", f"{bn}: ❤️{bhp} 💪{bstr} 🛡️{bdef}\n"]
     if ps or pd or ptn:
         parts = []
         if ps: parts.append(f"+{ps}💪")
         if pd: parts.append(f"+{pd}🛡️")
         if ptn: parts.append(f"+{int(ptn*100)}% урон 😤")
         log.append(f"🧪 Активное зелье: {' '.join(parts)}")
+    shp = seal[3]
+    for rnd in range(1, 21):
         if shp <= 0 or bhp <= 0: break
         dmg = es
         if any(s["effect"]=="berserk" for s in skills) and shp < eh*0.3: dmg = int(dmg*1.5)
         if random.random() < sum(0.15 for s in skills if s["effect"]=="crit_15"): dmg *= 2; log.append("⚡ Крит!")
         dmg = max(1, dmg - bdef + random.randint(-3,5))
-        if ptn: dmg = int(dmg * (1 + ptn))  # ИСПРАВЛЕНО: ярость +50% урона
+        if ptn: dmg = int(dmg * (1 + ptn))
         bhp -= dmg
         log.append(f"Р{rnd}: {seal[2]} →{dmg} (босс {max(0,bhp)}❤️)")
         if bhp <= 0: break
         if psp > 0 and bhp > 0 and random.random() < 0.5:
             d2 = max(1, es - bdef + random.randint(-3,5))
-            if ptn: d2 = int(d2 * (1 + ptn))  # ярость на доп. атаку
+            if ptn: d2 = int(d2 * (1 + ptn))
             bhp -= d2
             log.append(f"💨 Скорость! →{d2}")
         if bhp <= 0: break
         if random.random() < sum(0.10 for s in skills if s["effect"]=="double_strike") and bhp > 0:
             d2 = max(1, es - bdef + random.randint(-3,5))
-            if ptn: d2 = int(d2 * (1 + ptn))  # ярость на двойной удар
+            if ptn: d2 = int(d2 * (1 + ptn))
             bhp -= d2; log.append(f"⚔️ Двойной! →{d2}")
         if bhp <= 0: break
         dodge_chance = sum(0.10 for s in skills if s["effect"]=="dodge_10") + pdd/100.0
@@ -1740,7 +1742,7 @@ def do_battle(call):
     if bhp <= 0:
         rw = random.randint(20,50) + seal[9]*5; eg = int(random.randint(20,40) * get_exp_mult())
         add_fishnets(uid, rw)
-        update_seal(sid, exp=seal[10]+eg, mood=min(100,seal[5]+15), health=min(eh, max(1, shp)))  # ИСПРАВЛЕНО: сохраняем HP после боя
+        update_seal(sid, exp=seal[10]+eg, mood=min(100,seal[5]+15), health=min(eh, max(1, shp)))
         lv = check_levelup(sid)
         log.append(f"\n🎉 *Победа!* 🐟{rw} +{eg}оп")
         if lv: log.append(f"📈 Ур.{lv}!")
@@ -1750,10 +1752,10 @@ def do_battle(call):
         pl = get_player(uid)
         if pl and pl[5] == "hunters": add_faction_rep(uid, 2)
     elif shp <= 0:
-        update_seal(sid, health=max(1, shp), mood=max(0,seal[5]-20))  # ИСПРАВЛЕНО: используем shp, не seal[3]//4
+        update_seal(sid, health=max(1, shp), mood=max(0,seal[5]-20))
         log.append("\n💀 *Поражение...*")
     else:
-        update_seal(sid, health=min(eh, max(1, shp)))  # ИСПРАВЛЕНО: сохраняем HP при ничьей
+        update_seal(sid, health=min(eh, max(1, shp)))
         log.append("\n🤝 Ничья!")
     bot.edit_message_text("\n".join(log), call.message.chat.id, call.message.message_id, parse_mode='Markdown')
 
