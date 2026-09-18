@@ -7,6 +7,7 @@ TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "PLACEHOLDER_TOKEN")
 bot = telebot.TeleBot(TOKEN)
 DB_PATH = "/data/seal_life.db"
 BACKUP_DIR = "backups"
+PHOTOS_DIR = "photos"   # ДОБАВИТЬ ЭТУ СТРОКУ
 MAX_SEALS = 5
 FISHING_COOLDOWN_MIN = 10
 MAX_CLAN_MEMBERS = 20
@@ -541,7 +542,7 @@ def get_sell_price(item_name):
     if item_name in SHOP_ITEMS: return int(SHOP_ITEMS[item_name]["price"] * 0.5)
     if item_name in RESOURCE_SELL_PRICES: return RESOURCE_SELL_PRICES[item_name]
     if item_name in POTION_SELL_PRICES: return POTION_SELL_PRICES[item_name]
-    m = re.search(r'$$([A-Z])$$', item_name)
+    m = re.search(r'$$([A-Z])$$', item_name)  # ИСПРАВЛЕНО: была r'$$([A-Z])$$'
     if m and m.group(1) in RARITY_SELL_PRICES:
         return RARITY_SELL_PRICES[m.group(1)]
     for recipe in CRAFT_RECIPES:
@@ -552,6 +553,7 @@ def get_sell_price(item_name):
 
 def exp_for_level(lvl):
     return lvl * 100 + (lvl - 1) * 50
+
 def get_exp_mult():
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     now = datetime.now().isoformat()
@@ -757,6 +759,16 @@ def get_married_ids():
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("SELECT seal1_id FROM marriages UNION SELECT seal2_id FROM marriages")
     ids = set(r[0] for r in c.fetchall()); conn.close(); return ids
+
+def get_marriage_info(sid):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT seal1_id, seal2_id FROM marriages WHERE seal1_id=? OR seal2_id=?", (sid, sid))
+    r = c.fetchone(); conn.close()
+    if not r: return None
+    partner_id = r[1] if r[0] == sid else r[0]
+    partner = get_seal(partner_id)
+    if not partner: return None
+    return partner[2]
 
 def get_seal_status(seal, married):
     if not seal: return "❓"
@@ -1284,54 +1296,39 @@ def menu_seal(message):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("sinfo_"))
 def seal_selected(call, sid=None):
-    # Получаем ID тюленя
     if sid is None:
         try:
-            sid = int(call.data.split("_"))
+            sid = int(call.data.split("_")[1])
         except (IndexError, ValueError):
-            bot.answer_callback_query(call.id, "Ошибка данных!", show_alert=True)
+            bot.answer_callback_query(call.id, "Ошибка!", show_alert=True)
             return
-
-    # Обновляем прогресс роста
     check_baby_growth(sid)
-    
-    # Получаем данные тюленя
     seal = get_seal(sid)
     if not seal:
         bot.answer_callback_query(call.id, "Тюлень не найден!", show_alert=True)
         return
-
-    # Базовые данные
     uid = call.from_user.id
     fn = get_fishnets(uid)
-    
-    # Статистика
     es, ed, eh = get_effective_stats(sid)
     mb = get_mood_bonus(sid)
     skills = get_seal_skills(sid)
+    marriage_info = get_marriage_info(sid)
 
-    # Формируем текст описания
-    t = f"🦭 *{seal}*\n🐟 Рыбнетки: {fn}\n\n📊 Ур:{seal} (оп:{seal}/{exp_for_level(seal)})\n"
-    t += f"❤️ Здоровье: {seal}/{seal}"
-    if eh != seal: 
-        t += f" (с экип: {eh})"
-    
-    t += f"\n😊 Настроение: {seal}"
-    if mb > 0: 
-        t += f" (+{mb})"
-        
-    t += f"\n🍖 Сытость: {seal}\n💪 Сила: {seal}"
-    if es != seal: 
-        t += f" (с экип: {es})"
-        
-    t += f"\n🛡️ Защита: {seal}"
-    if ed != seal: 
-        t += f" (с экип: {ed})"
-    
+    t = f"🦭 *{seal[2]}*\n🐟 Рыбнетки: {fn}\n\n📊 Ур:{seal[9]} (оп:{seal[10]}/{exp_for_level(seal[9])})\n"
+    t += f"❤️ Здоровье: {seal[3]}/{seal[4]}"
+    if eh != seal[4]: t += f" (с экип: {eh})"
+    t += f"\n😊 Настроение: {seal[5]}"
+    if mb > 0: t += f" (+{mb})"
+    t += f"\n🍖 Сытость: {seal[6]}\n💪 Сила: {seal[7]}"
+    if es != seal[7]: t += f" (с экип: {es})"
+    t += f"\n🛡️ Защита: {seal[8]}"
+    if ed != seal[8]: t += f" (с экип: {ed})"
     t += "\n"
 
-    # Активное зелье
-    ap = seal if len(seal) > 23 else None
+    if marriage_info:
+        t += f"\n💍 В браке с: {marriage_info}\n"
+
+    ap = seal[23] if len(seal) > 23 else None
     if ap:
         ap_label = ap
         for r in CRAFT_RECIPES:
@@ -1340,43 +1337,33 @@ def seal_selected(call, sid=None):
                 break
         t += f"\n🧪 Активное зелье: {ap_label}\n"
 
-    # Навыки
     if skills:
         t += "\n*Навыки:*\n"
-        for sk in skills: 
-            t += f"  {sk['name']}\n"
+        for sk in skills: t += f"  {sk['name']}\n"
 
-    # Экипировка
     eq = []
-    slots = [13, 14, 15, 16, 17] # Индексы слотов
+    slots = [13, 14, 15, 16, 17]
     icons = ["⚔️", "🛡️", "🪖", "🛡️", "🎀"]
-    
     for i, icon in zip(slots, icons):
         if i < len(seal) and seal[i]:
             item_name = seal[i]
             ench = None
-            if uid and i == 13 or i == 14: # Энчанты только для оружия и щита (примерная логика)
+            if uid and i in (13, 14, 15, 16):
                 ench = get_enchantment_for_item(uid, item_name)
-            
             suffix = f" [{ench}]" if ench else ""
             eq.append(f"{icon}{item_name}{suffix}")
-
-    # Специальный слот (если есть)
-    if len(seal) > 22 and seal:
-        eq.append(f"✨{seal}")
-
+    if len(seal) > 22 and seal[22]:
+        eq.append(f"✨{seal[22]}")
     t += f"\n🎒 Экип: {', '.join(eq) if eq else 'нет'}\n"
 
-    # Статус малыша
-    if len(seal) > 11 and seal == 1:
+    if len(seal) > 11 and seal[11] == 1:
         try:
-            born = datetime.fromisoformat(seal)
+            born = datetime.fromisoformat(seal[12])
             days_left = BABY_GROW_DAYS - (datetime.now() - born).days
             t += f"\n🍼 Тюленёнок! Вырастет через {max(0, days_left)} дн.\n"
-        except Exception: 
+        except Exception:
             t += "\n🍼 Тюленёнок!\n"
 
-    # Клавиатура
     m = types.InlineKeyboardMarkup(row_width=2)
     m.add(
         types.InlineKeyboardButton("🍖 Кормить", callback_data=f"feed_{sid}"),
@@ -1394,42 +1381,34 @@ def seal_selected(call, sid=None):
         types.InlineKeyboardButton("📸 Фото", callback_data=f"sphoto_{sid}"),
         types.InlineKeyboardButton("✏️ Имя", callback_data=f"rename_{sid}")
     )
-    m.add(
-        types.InlineKeyboardButton("◀️ Назад", callback_data="back_main")
-    )
+    if marriage_info:
+        m.add(types.InlineKeyboardButton("💔 Развод", callback_data=f"divorce_{sid}"))
+    m.add(types.InlineKeyboardButton("◀️ Назад", callback_data="back_main"))
 
-    # Логика отправки сообщения (с фото или без)
     cid = call.message.chat.id
     mid = call.message.message_id
-    
-    # Безопасное получение пути к фото (проверка длины списка)
-    photo_path = seal if len(seal) > 20 else None
+    photo_path = seal[20] if len(seal) > 20 else None
 
     if photo_path and os.path.exists(photo_path):
+        try: bot.delete_message(cid, mid)
+        except Exception: pass
         try:
-            # Пытаемся удалить старое сообщение
-            bot.delete_message(cid, mid)
-        except Exception:
-            pass # Игнорируем ошибку, если сообщение нельзя удалить
-        
-        try:
-            # Отправляем фото с подписью
             with open(photo_path, 'rb') as f:
                 bot.send_photo(cid, f, caption=t, reply_markup=m, parse_mode='Markdown')
-        except Exception as e:
-            # Если фото не отправилось, отправляем просто текст
+        except Exception:
             bot.send_message(cid, t, reply_markup=m, parse_mode='Markdown')
     else:
-        # Если фото нет или файла не существует - редактируем текущее сообщение
         try:
             bot.edit_message_text(t, cid, mid, reply_markup=m, parse_mode='Markdown')
         except Exception:
-            # Если редактирование невозможно (например, сообщение слишком старое), отправляем новое
             bot.send_message(cid, t, reply_markup=m, parse_mode='Markdown')
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("feed_"))
 def seal_feed(call):
     uid = call.from_user.id; sid = int(call.data.split("_")[1]); inv = get_inv(uid)
+    seal = get_seal(sid)
+    if not seal or seal[1] != uid:
+        bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True); return
     food = [i for i in inv if i[3] == "food"]
     if not food: bot.answer_callback_query(call.id, "Нет еды!"); return
     m = types.InlineKeyboardMarkup()
@@ -1447,10 +1426,11 @@ def seal_feed(call):
 @bot.callback_query_handler(func=lambda c: c.data.startswith("dfd_"))
 def seal_do_feed(call):
     uid = call.from_user.id; p = call.data.split("_"); sid = int(p[1]); name = "_".join(p[2:])
+    seal = get_seal(sid)
+    if not seal or seal[1] != uid:
+        bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True); return
     info = SHOP_ITEMS.get(name)
     if not info: bot.answer_callback_query(call.id, "Не найден!"); return
-    seal = get_seal(sid)
-    if not seal: return
     update_seal(sid, satiety=min(100, seal[6]+info["satiety"]), mood=min(100, seal[5]+info.get("mood",5)))
     remove_from_inv(uid, name)
     bot.answer_callback_query(call.id, f"{seal[2]} съел {name}!")
@@ -1459,7 +1439,8 @@ def seal_do_feed(call):
 @bot.callback_query_handler(func=lambda c: c.data.startswith("heal_"))
 def seal_heal(call):
     uid = call.from_user.id; sid = int(call.data.split("_")[1]); seal = get_seal(sid)
-    if not seal: return
+    if not seal or seal[1] != uid:
+        bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True); return
     es, ed, eh = get_effective_stats(sid)
     if seal[3] >= eh: bot.answer_callback_query(call.id, "Здоров!"); return
     if get_item_qty(uid, "Аптечка 💊") <= 0: bot.answer_callback_query(call.id, "Нет аптечек!"); return
@@ -1471,7 +1452,8 @@ def seal_heal(call):
 @bot.callback_query_handler(func=lambda c: c.data.startswith("play_"))
 def seal_play(call):
     uid = call.from_user.id; sid = int(call.data.split("_")[1]); seal = get_seal(sid)
-    if not seal: return
+    if not seal or seal[1] != uid:
+        bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True); return
     if seal[6] < 10: bot.answer_callback_query(call.id, "Голоден!"); return
     wc = seal[19]
     if wc:
@@ -1504,6 +1486,9 @@ def proc_rename(message, sid):
 @bot.callback_query_handler(func=lambda c: c.data.startswith("equip_"))
 def seal_equip_menu(call):
     uid = call.from_user.id; sid = int(call.data.split("_")[1]); inv = get_inv(uid)
+    seal = get_seal(sid)
+    if not seal or seal[1] != uid:
+        bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True); return
     gt = ("weapon","armor","helmet","shield","accessory","artifact")
     gi = [i for i in inv if ITEM_TYPES.get(i[2]) in gt]
     if not gi: bot.answer_callback_query(call.id, "Нет экипировки!"); return
@@ -1523,10 +1508,11 @@ def seal_equip_menu(call):
 @bot.callback_query_handler(func=lambda c: c.data.startswith("deq_"))
 def seal_do_equip(call):
     uid = call.from_user.id; p = call.data.split("_"); sid = int(p[1]); name = "_".join(p[2:])
+    seal = get_seal(sid)
+    if not seal or seal[1] != uid:
+        bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True); return
     it = ITEM_TYPES.get(name)
     if not it: bot.answer_callback_query(call.id, "Не найден!"); return
-    seal = get_seal(sid)
-    if not seal: return
     if it == "artifact":
         slot = "equipped_artifact"; ci = 22
     else:
@@ -1540,11 +1526,13 @@ def seal_do_equip(call):
     pl = get_player(uid)
     if pl and pl[5] == "fashion" and it == "accessory": add_faction_rep(uid, 2)
     bot.answer_callback_query(call.id, f"Надето: {name}"); seal_selected(call, sid)
+
 @bot.callback_query_handler(func=lambda c: c.data.startswith("unequip_"))
 def seal_unequip_menu(call):
     uid = call.from_user.id; sid = int(call.data.split("_")[1])
     seal = get_seal(sid)
-    if not seal: return
+    if not seal or seal[1] != uid:
+        bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True); return
     slots = {
         "equipped_weapon": ("⚔️ Оружие", 13),
         "equipped_armor": ("🛡️ Броня", 14),
@@ -1575,7 +1563,8 @@ def seal_unequip_menu(call):
 def seal_do_unequip(call):
     uid = call.from_user.id; p = call.data.split("_"); sid = int(p[1]); col = p[2]
     seal = get_seal(sid)
-    if not seal: return
+    if not seal or seal[1] != uid:
+        bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True); return
     slot_map = {
         "equipped_weapon": 13, "equipped_armor": 14, "equipped_helmet": 15,
         "equipped_shield": 16, "equipped_accessory": 17, "equipped_artifact": 22,
@@ -1592,6 +1581,9 @@ def seal_do_unequip(call):
 @bot.callback_query_handler(func=lambda c: c.data.startswith("spot_"))
 def seal_potion_menu(call):
     uid = call.from_user.id; sid = int(call.data.split("_")[1]); inv = get_inv(uid)
+    seal = get_seal(sid)
+    if not seal or seal[1] != uid:
+        bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True); return
     potions = [i for i in inv if i[3] == "potion"]
     if not potions: bot.answer_callback_query(call.id, "Нет зелий! Сварите в /potion"); return
     m = types.InlineKeyboardMarkup()
@@ -1610,6 +1602,9 @@ def seal_potion_menu(call):
 @bot.callback_query_handler(func=lambda c: c.data.startswith("spotuse_"))
 def seal_potion_use(call):
     uid = call.from_user.id; p = call.data.split("_"); sid = int(p[1]); name = "_".join(p[2:])
+    seal = get_seal(sid)
+    if not seal or seal[1] != uid:
+        bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True); return
     if get_item_qty(uid, name) <= 0: bot.answer_callback_query(call.id, "Нет!"); return
     result = apply_potion_to_seal(sid, name)
     if "Неизвестное" in result or "не найден" in result:
@@ -1692,6 +1687,7 @@ def craft_do(call):
     pl = get_player(uid)
     if pl and pl[5] == "hunters": add_faction_rep(uid, 1)
     bot.answer_callback_query(call.id, f"Скрафчено: {name}!")
+
 # ==================== ЗЕЛЬЯ ====================
 @bot.message_handler(commands=['potion'])
 @bot.message_handler(func=lambda m: m.text == "🧪 Зелья")
@@ -1777,8 +1773,10 @@ def menu_work(message):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("wsel_"))
 def work_sel(call):
-    sid = int(call.data.split("_")[1]); seal = get_seal(sid)
+    uid = call.from_user.id; sid = int(call.data.split("_")[1]); seal = get_seal(sid)
     if not seal: return
+    if seal[1] != uid:  # ИСПРАВЛЕНО: проверка владельца
+        bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True); return
     if seal[6] < 20: bot.answer_callback_query(call.id, "Сытость<20!"); return
     wc = seal[18]
     if wc:
@@ -1800,7 +1798,10 @@ def work_do(call):
     uid = call.from_user.id; p = call.data.split("_"); sid = int(p[1]); ji = int(p[2])
     if ji < 0 or ji >= len(JOBS): bot.answer_callback_query(call.id, "Не найдена!"); return
     job = JOBS[ji]; seal = get_seal(sid)
-    if not seal or seal[6] < 20 or seal[5] < 10: bot.answer_callback_query(call.id, "Не может!"); return
+    if not seal: return
+    if seal[1] != uid:  # ИСПРАВЛЕНО: проверка владельца
+        bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True); return
+    if seal[6] < 20 or seal[5] < 10: bot.answer_callback_query(call.id, "Не может!"); return
     wc = seal[18]
     if wc:
         try:
@@ -1838,7 +1839,10 @@ def menu_battle(message):
 @bot.callback_query_handler(func=lambda c: c.data.startswith("bat_"))
 def do_battle(call):
     uid = call.from_user.id; sid = int(call.data.split("_")[1]); seal = get_seal(sid)
-    if not seal or seal[3] <= 0: bot.answer_callback_query(call.id, "Не может!"); return
+    if not seal: return
+    if seal[1] != uid:  # ИСПРАВЛЕНО: проверка владельца
+        bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True); return
+    if seal[3] <= 0: bot.answer_callback_query(call.id, "Не может!"); return
     es, ed, eh = get_effective_stats(sid); skills = get_seal_skills(sid)
     ps, pd, pdd, prg, psp, ptn = get_active_potion_mods(sid)
     boss = random.choice(BOSSES); bn = boss["name"]
@@ -1920,6 +1924,8 @@ def menu_dungeon(message):
 def dng_start(call):
     uid = call.from_user.id; sid = int(call.data.split("_")[1]); seal = get_seal(sid)
     if not seal: return
+    if seal[1] != uid:  # ИСПРАВЛЕНО: проверка владельца
+        bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True); return
     if seal[3] <= 20: bot.answer_callback_query(call.id, "HP<20!"); return
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("DELETE FROM dungeon_runs WHERE user_id=?", (uid,))
@@ -1976,6 +1982,8 @@ def dng_atk(call):
     uid = call.from_user.id; p = call.data.split("_"); sid = int(p[1]); fl = int(p[2]); mon_idx = int(p[3])
     seal = get_seal(sid)
     if not seal: return
+    if seal[1] != uid:  # ИСПРАВЛЕНО: проверка владельца
+        bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True); return
     mon = get_floor_monster(fl, mon_idx)
     es, ed, eh = get_effective_stats(sid)
     skills = get_seal_skills(sid)
@@ -2168,6 +2176,9 @@ def duel_seal(call):
     uid = call.from_user.id; p = call.data.split("_"); did = int(p[1]); osid = int(p[2])
     duel = get_duel(did)
     if not duel or duel[5] != 'pending': bot.answer_callback_query(call.id, "Недоступна!"); return
+    seal = get_seal(osid)
+    if not seal or seal[1] != uid:  # ИСПРАВЛЕНО: проверка владельца
+        bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True); return
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("UPDATE duels SET status='active',opponent_seal_id=? WHERE duel_id=?", (osid, did))
     conn.commit(); conn.close()
@@ -2318,6 +2329,7 @@ def tr_set(message, name):
     try: pr = int(message.text.strip())
     except: bot.send_message(chat_id, "Число!"); return
     if pr < 1: bot.send_message(chat_id, ">0!"); return
+    if get_item_qty(uid, name) <= 0: bot.send_message(chat_id, "Нет предмета!"); return  # ИСПРАВЛЕНО
     it = ITEM_TYPES.get(name, "misc")
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("INSERT INTO trade_offers (seller_id,item_name,item_type,price,created_at,active) VALUES (?,?,?,?,?,1)", (uid, name, it, pr, datetime.now().isoformat()))
@@ -2650,25 +2662,79 @@ def marry_do(call):
     uid = call.from_user.id; p = call.data.split("_"); s1, s2, pid = int(p[1]), int(p[2]), int(p[3])
     se1, se2 = get_seal(s1), get_seal(s2)
     if not se1 or not se2: bot.answer_callback_query(call.id, "Не найден!"); return
-    if get_seal_count(uid) >= MAX_SEALS: bot.answer_callback_query(call.id, f"Макс {MAX_SEALS}!"); return
+    # ИСПРАВЛЕНО: проверка принадлежности тюленей
+    if se1[1] != uid:
+        bot.answer_callback_query(call.id, "Это не ваш тюлень!"); return
+    if se2[1] != pid:
+        bot.answer_callback_query(call.id, "Это не тюлень партнёра!"); return
+    if get_seal_count(uid) >= MAX_SEALS:
+        bot.answer_callback_query(call.id, f"Макс {MAX_SEALS} у вас!"); return
+    if get_seal_count(pid) >= MAX_SEALS:
+        bot.answer_callback_query(call.id, f"Макс {MAX_SEALS} у партнёра!"); return
+    # ИСПРАВЛЕНО: проверка, что ни один из тюленей не состоит в браке
+    married_ids = get_married_ids()
+    if s1 in married_ids or s2 in married_ids:
+        bot.answer_callback_query(call.id, "Один из тюленей уже в браке!"); return
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT * FROM marriages WHERE (seal1_id=? AND seal2_id=?) OR (seal1_id=? AND seal2_id=?)", (s1, s2, s2, s1))
-    if c.fetchone(): bot.answer_callback_query(call.id, "Уже в браке!"); conn.close(); return
-    c.execute("INSERT INTO marriages (seal1_id,seal2_id,player1_id,player2_id,created_at) VALUES (?,?,?,?,?)", (s1, s2, uid, pid, datetime.now().isoformat()))
+    c.execute("INSERT INTO marriages (seal1_id,seal2_id,player1_id,player2_id,created_at) VALUES (?,?,?,?,?)",
+              (s1, s2, uid, pid, datetime.now().isoformat()))
     conn.commit(); conn.close()
     msg = f"💍 Брак! {se1[2]} ❤️ {se2[2]}\n"
+    baby_created = False
+    bn = ""
+    bs = 0
+    bd = 0
     if random.random() < 0.5:
         bn = random.choice(["Малыш","Кроха","Пузырь","Лапик","Шлёпик","Ням"])
-        bs = (se1[7]+se2[7])//4 + random.randint(1,3); bd = (se1[8]+se2[8])//4 + random.randint(0,2)
+        bs = (se1[7]+se2[7])//4 + random.randint(1,3)
+        bd = (se1[8]+se2[8])//4 + random.randint(0,2)
+        # ИСПРАВЛЕНО: ребёнок создаётся для обоих игроков
         conn = sqlite3.connect(DB_PATH); c = conn.cursor()
         c.execute("INSERT INTO seals (owner_id,name,health,max_health,mood,satiety,strength,defense,level,exp,is_baby,born_at) VALUES (?,?,?,?,?,?,?,?,?,?,1,?)",
                   (uid, bn, 60, 60, 70, 70, bs, bd, 1, 0, datetime.now().isoformat()))
         conn.commit(); conn.close()
-        msg += f"🍼 Тюленёнок — {bn}! С:{bs} З:{bd}\nВырастет через {BABY_GROW_DAYS} дн."
-    else: msg += "Нет тюленёнка..."
+        conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+        c.execute("INSERT INTO seals (owner_id,name,health,max_health,mood,satiety,strength,defense,level,exp,is_baby,born_at) VALUES (?,?,?,?,?,?,?,?,?,?,1,?)",
+                  (pid, bn, 60, 60, 70, 70, bs, bd, 1, 0, datetime.now().isoformat()))
+        conn.commit(); conn.close()
+        msg += f"🍼 Тюленёнок — {bn}! С:{bs} З:{bd}\nВырастет через {BABY_GROW_DAYS} дн.\nРебёнок у обоих игроков!"
+        baby_created = True
+    else:
+        msg += "Нет тюленёнка..."
     bot.edit_message_text(msg, call.message.chat.id, call.message.message_id, parse_mode='Markdown')
+    # ИСПРАВЛЕНО: уведомление партнёру
+    try:
+        notify = f"💍 Ваш тюлень {se2[2]} вступил в брак с {se1[2]}!\n"
+        if baby_created:
+            notify += f"🍼 У вас родился тюленёнок — {bn}! С:{bs} З:{bd}\nВырастет через {BABY_GROW_DAYS} дн."
+        else:
+            notify += "Тюленёнка не получилось..."
+        bot.send_message(pid, notify, parse_mode='Markdown')
+    except: pass
 
-# ==================== ЕЖЕДНЕВНЫЕ ЗАДАНИЯ (ОБНОВЛЁННЫЕ) ====================
+# ИСПРАВЛЕНО: обработчик развода
+@bot.callback_query_handler(func=lambda c: c.data.startswith("divorce_"))
+def divorce_seal(call):
+    uid = call.from_user.id; sid = int(call.data.split("_")[1])
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT marriage_id, player1_id, player2_id, seal1_id, seal2_id FROM marriages WHERE seal1_id=? OR seal2_id=?", (sid, sid))
+    r = c.fetchone()
+    if not r: bot.answer_callback_query(call.id, "Нет брака!"); conn.close(); return
+    mid_db, p1, p2, s1_id, s2_id = r
+    if uid != p1 and uid != p2: bot.answer_callback_query(call.id, "Не ваш брак!"); conn.close(); return
+    c.execute("DELETE FROM marriages WHERE marriage_id=?", (mid_db,)); conn.commit(); conn.close()
+    partner_id = p2 if uid == p1 else p1
+    partner_seal_id = s2_id if sid == s1_id else s1_id
+    my_seal = get_seal(sid)
+    partner_seal = get_seal(partner_seal_id)
+    my_name = my_seal[2] if my_seal else "?"
+    partner_name = partner_seal[2] if partner_seal else "?"
+    bot.answer_callback_query(call.id, f"💔 {my_name} и {partner_name} развелись!")
+    try: bot.send_message(partner_id, f"💔 {my_name} и {partner_name} развелись...")
+    except: pass
+    seal_selected(call, sid)
+
+# ==================== ЕЖЕДНЕВНЫЕ ЗАДАНИЯ ====================
 def show_quests(uid, chat_id, message_id=None):
     try: generate_daily_quests(uid); quests = get_daily_quests(uid)
     except Exception as e: bot.send_message(chat_id, f"⚠️ Ошибка БД: {e}"); return
@@ -2728,27 +2794,6 @@ def quest_claim(call):
         reward_msg += f", 🍴{food_r}"
     bot.answer_callback_query(call.id, f"Получено: {reward_msg}!")
     show_quests(uid, call.message.chat.id, call.message.message_id)
-
-# ==================== ПРИВЯЗКА К ТОПИКУ ====================
-@bot.message_handler(commands=['bindtopic'])
-def cmd_bindtopic(message):
-    chat_id = message.chat.id
-    thread_id = getattr(message, 'message_thread_id', None)
-    if thread_id is None:
-        bot.send_message(chat_id, "❌ Эту команду нужно отправить внутри топика (ветки) в группе.")
-        return
-    set_topic_binding(chat_id, thread_id)
-    bot.send_message(chat_id, f"✅ Бот привязан к этому топику (ID: {thread_id}).\nТеперь все сообщения будут отправляться сюда.")
-
-@bot.message_handler(commands=['unbindtopic'])
-def cmd_unbindtopic(message):
-    chat_id = message.chat.id
-    existing = get_topic_binding(chat_id)
-    if existing is None:
-        bot.send_message(chat_id, "❌ Привязка к топику не установлена.")
-        return
-    remove_topic_binding(chat_id)
-    bot.send_message(chat_id, "✅ Привязка к топику снята. Бот будет отвечать в любом топике.")
 
 # ==================== ФОНОВЫЕ ПОТОКИ ====================
 def stats_decay():
