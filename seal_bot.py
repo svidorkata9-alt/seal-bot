@@ -1717,6 +1717,8 @@ def potion_brew(call):
     bot.answer_callback_query(call.id, f"Сварено: {name}!")
 
 # ==================== ЗАЧАРОВАНИЕ ====================
+_enchant_items_cache = {}
+
 @bot.message_handler(commands=['enchant'])
 @bot.message_handler(func=lambda m: m.text == "✨ Зачарование")
 def menu_enchant(message):
@@ -1728,31 +1730,43 @@ def menu_enchant(message):
         return
     t = "✨ *Зачарование*\n\nВыберите предмет:\n\n"
     m = types.InlineKeyboardMarkup()
-    for i in equippable:
+    _enchant_items_cache[uid] = {}
+    for idx, i in enumerate(equippable):
         ench = get_enchantment_for_item(uid, i[2])
         label = f"{i[2]} (x{i[4]})" + (f" [{ench}]" if ench else "")
-        m.add(types.InlineKeyboardButton(label, callback_data=f"ensel_{i[2]}"))
+        m.add(types.InlineKeyboardButton(label, callback_data=f"ensel_{idx}"))
+        _enchant_items_cache[uid][idx] = i[2]
     bot.send_message(chat_id, t, parse_mode='Markdown', reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("ensel_"))
 def enchant_select(call):
-    uid = call.from_user.id; item_name = call.data[6:]
+    uid = call.from_user.id; item_idx = int(call.data[6:])
+    item_name = _enchant_items_cache.get(uid, {}).get(item_idx)
+    if not item_name:
+        bot.answer_callback_query(call.id, "Предмет не найден!"); return
     t = f"✨ *Зачарование: {item_name}*\n\nВыберите тип:\n\n"
     m = types.InlineKeyboardMarkup()
-    for ench_name, ench in ENCHANTMENTS.items():
+    for ench_idx, (ench_name, ench) in enumerate(ENCHANTMENTS.items()):
         cost = ", ".join([f"{r} x{a}" for r, a in ench["cost"].items()])
         bonus = ""
         if ench["bonus_str"]: bonus += f"💪+{ench['bonus_str']} "
         if ench["bonus_def"]: bonus += f"🛡️+{ench['bonus_def']}"
         can = "✅" if can_enchant(uid, ench_name) else "❌"
         t += f"  {can} {ench_name} ({bonus})\n    {cost}\n\n"
-        m.add(types.InlineKeyboardButton(f"{can} {ench_name}", callback_data=f"endo_{item_name}_{ench_name}"))
+        m.add(types.InlineKeyboardButton(f"{can} {ench_name}", callback_data=f"endo_{item_idx}_{ench_idx}"))
     m.add(types.InlineKeyboardButton("◀️", callback_data="back_main"))
     bot.edit_message_text(t, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("endo_"))
 def enchant_do(call):
-    uid = call.from_user.id; p = call.data.split("_", 2); item_name = p[1]; ench_name = p[2]
+    uid = call.from_user.id; p = call.data.split("_"); item_idx = int(p[1]); ench_idx = int(p[2])
+    item_name = _enchant_items_cache.get(uid, {}).get(item_idx)
+    if not item_name:
+        bot.answer_callback_query(call.id, "Предмет не найден!"); return
+    ench_names = list(ENCHANTMENTS.keys())
+    if ench_idx < 0 or ench_idx >= len(ench_names):
+        bot.answer_callback_query(call.id, "Зачарование не найдено!"); return
+    ench_name = ench_names[ench_idx]
     result = do_enchant_item(uid, item_name, ench_name)
     if "✨" in result: update_quest_progress(uid, "enchant", 1)
     bot.answer_callback_query(call.id, result)
@@ -2070,7 +2084,7 @@ def dng_flee(call):
 
 # ==================== РЫБАЛКА ====================
 fish_active = {}
-
+_enchant_items_cache = {}
 @bot.message_handler(commands=['fish'])
 @bot.message_handler(func=lambda m: m.text == "🎣 Рыбалка")
 def cmd_fish(message):
