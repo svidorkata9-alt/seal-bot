@@ -1284,82 +1284,148 @@ def menu_seal(message):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("sinfo_"))
 def seal_selected(call, sid=None):
-    if sid is None: sid = int(call.data.split("_")[1])
+    # Получаем ID тюленя
+    if sid is None:
+        try:
+            sid = int(call.data.split("_"))
+        except (IndexError, ValueError):
+            bot.answer_callback_query(call.id, "Ошибка данных!", show_alert=True)
+            return
+
+    # Обновляем прогресс роста
     check_baby_growth(sid)
+    
+    # Получаем данные тюленя
     seal = get_seal(sid)
-    if not seal: bot.answer_callback_query(call.id, "Не найден!"); return
-    uid = call.from_user.id; fn = get_fishnets(uid)
-    es, ed, eh = get_effective_stats(sid); mb = get_mood_bonus(sid)
+    if not seal:
+        bot.answer_callback_query(call.id, "Тюлень не найден!", show_alert=True)
+        return
+
+    # Базовые данные
+    uid = call.from_user.id
+    fn = get_fishnets(uid)
+    
+    # Статистика
+    es, ed, eh = get_effective_stats(sid)
+    mb = get_mood_bonus(sid)
     skills = get_seal_skills(sid)
-    t = f"🦭 *{seal[2]}*\n🐟 Рыбнетки: {fn}\n\n📊 Ур:{seal[9]} (оп:{seal[10]}/{exp_for_level(seal[9])})\n"
-    t += f"❤️ Здоровье: {seal[3]}/{seal[4]}"
-    if eh != seal[4]: t += f" (с экип: {eh})"
-    t += f"\n😊 Настроение: {seal[5]}"
-    if mb > 0: t += f" (+{mb})"
-    t += f"\n🍖 Сытость: {seal[6]}\n💪 Сила: {seal[7]}"
-    if es != seal[7]: t += f" (с экип: {es})"
-    t += f"\n🛡️ Защита: {seal[8]}"
-    if ed != seal[8]: t += f" (с экип: {ed})"
+
+    # Формируем текст описания
+    t = f"🦭 *{seal}*\n🐟 Рыбнетки: {fn}\n\n📊 Ур:{seal} (оп:{seal}/{exp_for_level(seal)})\n"
+    t += f"❤️ Здоровье: {seal}/{seal}"
+    if eh != seal: 
+        t += f" (с экип: {eh})"
+    
+    t += f"\n😊 Настроение: {seal}"
+    if mb > 0: 
+        t += f" (+{mb})"
+        
+    t += f"\n🍖 Сытость: {seal}\n💪 Сила: {seal}"
+    if es != seal: 
+        t += f" (с экип: {es})"
+        
+    t += f"\n🛡️ Защита: {seal}"
+    if ed != seal: 
+        t += f" (с экип: {ed})"
+    
     t += "\n"
-    ap = seal[23] if len(seal) > 23 else None
+
+    # Активное зелье
+    ap = seal if len(seal) > 23 else None
     if ap:
         ap_label = ap
         for r in CRAFT_RECIPES:
             if r.get("effect") and ap.startswith(r["effect"]):
-                ap_label = r["name"]; break
+                ap_label = r["name"]
+                break
         t += f"\n🧪 Активное зелье: {ap_label}\n"
+
+    # Навыки
     if skills:
         t += "\n*Навыки:*\n"
-        for sk in skills: t += f"  {sk['name']}\n"
+        for sk in skills: 
+            t += f"  {sk['name']}\n"
+
+    # Экипировка
     eq = []
-    if seal[13]:
-        ench = get_enchantment_for_item(uid, seal[13]) if uid else None
-        eq.append(f"⚔️{seal[13]}" + (f" [{ench}]" if ench else ""))
-    if seal[14]:
-        ench = get_enchantment_for_item(uid, seal[14]) if uid else None
-        eq.append(f"🛡️{seal[14]}" + (f" [{ench}]" if ench else ""))
-    if seal[15]: eq.append(f"🪖{seal[15]}")
-    if seal[16]: eq.append(f"🛡️{seal[16]}")
-    if seal[17]: eq.append(f"🎀{seal[17]}")
-    if len(seal) > 22 and seal[22]: eq.append(f"✨{seal[22]}")
+    slots = [13, 14, 15, 16, 17] # Индексы слотов
+    icons = ["⚔️", "🛡️", "🪖", "🛡️", "🎀"]
+    
+    for i, icon in zip(slots, icons):
+        if i < len(seal) and seal[i]:
+            item_name = seal[i]
+            ench = None
+            if uid and i == 13 or i == 14: # Энчанты только для оружия и щита (примерная логика)
+                ench = get_enchantment_for_item(uid, item_name)
+            
+            suffix = f" [{ench}]" if ench else ""
+            eq.append(f"{icon}{item_name}{suffix}")
+
+    # Специальный слот (если есть)
+    if len(seal) > 22 and seal:
+        eq.append(f"✨{seal}")
+
     t += f"\n🎒 Экип: {', '.join(eq) if eq else 'нет'}\n"
-    if seal[11] == 1:
+
+    # Статус малыша
+    if len(seal) > 11 and seal == 1:
         try:
-            born = datetime.fromisoformat(seal[12])
+            born = datetime.fromisoformat(seal)
             days_left = BABY_GROW_DAYS - (datetime.now() - born).days
             t += f"\n🍼 Тюленёнок! Вырастет через {max(0, days_left)} дн.\n"
-        except: t += "\n🍼 Тюленёнок!\n"
+        except Exception: 
+            t += "\n🍼 Тюленёнок!\n"
+
+    # Клавиатура
     m = types.InlineKeyboardMarkup(row_width=2)
     m.add(
-    types.InlineKeyboardButton("🍖 Кормить", callback_data=f"feed_{sid}"),
-    types.InlineKeyboardButton("🎾 Играть", callback_data=f"play_{sid}")
-)
-m.add(
-    types.InlineKeyboardButton("💊 Лечить", callback_data=f"heal_{sid}"),
-    types.InlineKeyboardButton("👕 Экип", callback_data=f"equip_{sid}")
-)
-m.add(
-    types.InlineKeyboardButton("👕 Снять", callback_data=f"unequip_{sid}"),
-    types.InlineKeyboardButton("🧪 Зелье", callback_data=f"spot_{sid}")
-)
-m.add(
-    types.InlineKeyboardButton("📸 Фото", callback_data=f"sphoto_{sid}"),
-    types.InlineKeyboardButton("✏️ Имя", callback_data=f"rename_{sid}")
-)
-m.add(
-    types.InlineKeyboardButton("◀️ Назад", callback_data="back_main")
-)
+        types.InlineKeyboardButton("🍖 Кормить", callback_data=f"feed_{sid}"),
+        types.InlineKeyboardButton("🎾 Играть", callback_data=f"play_{sid}")
+    )
+    m.add(
+        types.InlineKeyboardButton("💊 Лечить", callback_data=f"heal_{sid}"),
+        types.InlineKeyboardButton("👕 Экип", callback_data=f"equip_{sid}")
+    )
+    m.add(
+        types.InlineKeyboardButton("👕 Снять", callback_data=f"unequip_{sid}"),
+        types.InlineKeyboardButton("🧪 Зелье", callback_data=f"spot_{sid}")
+    )
+    m.add(
+        types.InlineKeyboardButton("📸 Фото", callback_data=f"sphoto_{sid}"),
+        types.InlineKeyboardButton("✏️ Имя", callback_data=f"rename_{sid}")
+    )
+    m.add(
+        types.InlineKeyboardButton("◀️ Назад", callback_data="back_main")
+    )
 
-    cid = call.message.chat.id; mid = call.message.message_id; pp = seal[20]
-    if pp and os.path.exists(pp):
-        try: bot.delete_message(cid, mid)
-        except: pass
+    # Логика отправки сообщения (с фото или без)
+    cid = call.message.chat.id
+    mid = call.message.message_id
+    
+    # Безопасное получение пути к фото (проверка длины списка)
+    photo_path = seal if len(seal) > 20 else None
+
+    if photo_path and os.path.exists(photo_path):
         try:
-            with open(pp, 'rb') as f: bot.send_photo(cid, f, caption=t, reply_markup=m, parse_mode='Markdown')
-        except: bot.send_message(cid, t, reply_markup=m, parse_mode='Markdown')
+            # Пытаемся удалить старое сообщение
+            bot.delete_message(cid, mid)
+        except Exception:
+            pass # Игнорируем ошибку, если сообщение нельзя удалить
+        
+        try:
+            # Отправляем фото с подписью
+            with open(photo_path, 'rb') as f:
+                bot.send_photo(cid, f, caption=t, reply_markup=m, parse_mode='Markdown')
+        except Exception as e:
+            # Если фото не отправилось, отправляем просто текст
+            bot.send_message(cid, t, reply_markup=m, parse_mode='Markdown')
     else:
-        try: bot.edit_message_text(t, cid, mid, reply_markup=m, parse_mode='Markdown')
-        except: bot.send_message(cid, t, reply_markup=m, parse_mode='Markdown')
+        # Если фото нет или файла не существует - редактируем текущее сообщение
+        try:
+            bot.edit_message_text(t, cid, mid, reply_markup=m, parse_mode='Markdown')
+        except Exception:
+            # Если редактирование невозможно (например, сообщение слишком старое), отправляем новое
+            bot.send_message(cid, t, reply_markup=m, parse_mode='Markdown')
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("feed_"))
 def seal_feed(call):
