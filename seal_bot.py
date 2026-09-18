@@ -110,8 +110,21 @@ def migration_6(c):
     except sqlite3.OperationalError: pass
     try: c.execute("ALTER TABLE daily_quests ADD COLUMN food_reward TEXT")
     except sqlite3.OperationalError: pass
+def migration_7(c):
+    c.execute("CREATE TABLE IF NOT EXISTS seal_talents (seal_id INTEGER PRIMARY KEY, talent TEXT)")
+    try: c.execute("ALTER TABLE seals ADD COLUMN healer_cd TEXT")
+    except sqlite3.OperationalError: pass
+    c.execute("""CREATE TABLE IF NOT EXISTS lottery_tickets (
+        ticket_id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, ticket_date TEXT
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS lottery_results (
+        draw_date TEXT PRIMARY KEY, winner_id INTEGER, prize INTEGER
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS treasure_runs (
+        user_id INTEGER PRIMARY KEY, seal_id INTEGER, current_step INTEGER DEFAULT 0, active INTEGER DEFAULT 1
+    )""")
 
-MIGRATIONS = [migration_1, migration_2, migration_3, migration_4, migration_5, migration_6]
+MIGRATIONS = [migration_1, migration_2, migration_3, migration_4, migration_5, migration_6, migration_7]
 
 def run_migrations():
     backup_db()
@@ -301,7 +314,7 @@ RESOURCE_SELL_PRICES = {
     "Коралл 🪸": 15, "Ледяной кристалл 🧊": 20, "Огненный камень 🔥": 20,
     "Грозовой камень ⚡": 30, "Кристальный осколок 💎": 35, "Призрачная эссенция 👻": 35,
     "Драконья чешуя 🐉": 60, "Кровь кракена 🩸": 50, "Тёмная эссенция 🌑": 55,
-    "Слеза Посейдона 💧": 120,
+    "Слеза Посейдона 💧": 120,"Карта сокровищ 🗺️": 40,
 }
 
 POTION_SELL_PRICES = {
@@ -347,7 +360,7 @@ for _r in "FEDCBAS":
         ITEM_TYPES[_fn] = "armor"
 ITEM_TYPES.update({"Компас мудреца 🧭": "accessory", "Амулет глубин 🌊": "accessory", "Корона чемпиона 👑": "accessory"})
 for _p in POTION_SELL_PRICES: ITEM_TYPES[_p] = "potion"
-
+ITEM_TYPES["Карта сокровищ 🗺️"] = "treasure"
 SEAL_SKILLS_POOL = [
     {"name": "Критический удар ⚡", "effect": "crit_15", "desc": "15% шанс двойного урона"},
     {"name": "Толстая кожа 🛡️", "effect": "dmg_reduce_10", "desc": "-10% получаемого урона"},
@@ -458,6 +471,13 @@ QUEST_TEMPLATES = [
 ]
 
 CLAN_EMOJIS = ["🦭", "🐋", "🦈", "🐙", "🦀", "🦐", "🦑", "🐬", "🐳", "🐢"]
+TALENTS = {
+    "mage": {"name": "Маг 🔮", "desc": "+30% урона магией каждый ход"},
+    "archer": {"name": "Лучник 🏹", "desc": "20% шанс доп. выстрела (50% урона)"},
+    "warrior": {"name": "Воин ⚔️", "desc": "-25% получаемого урона"},
+    "summoner": {"name": "Призыватель 🐾", "desc": "+15 урона от союзника каждый ход"},
+    "healer": {"name": "Хиллер 💚", "desc": "Лечит 20% макс HP раз за бой; вне боя 25 HP (кд 15м)"},
+}
 
 # ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 def _safe_int(value, default=0):
@@ -887,6 +907,9 @@ def trigger_encounter(uid):
                 if d: msg += f"\nНо добыча: {', '.join(d)}"
     elif enc["type"] == "hint":
         r = random.randint(*enc["fishnet_reward"]); add_fishnets(uid, r); msg += f"Дельфин подсказал секрет! 🐟{r}"
+    if msg and random.random() < 0.05:
+        add_to_inv(uid, "Карта сокровищ 🗺️", "treasure", 1)
+        msg += "\n🗺️ И карту сокровищ!"
     return msg
 
 def create_duel(cid, oid, csid):
@@ -959,6 +982,148 @@ def open_chest(uid, rarity):
         fn = f"{a['name']} [{rarity}]"
         add_to_inv(uid, fn, "armor", 1)
         msg += f"🛡️ Броня: {fn}\n"
+    return msg
+# ==================== ТАЛАНТЫ ====================
+def get_seal_talent(sid):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT talent FROM seal_talents WHERE seal_id=?", (sid,)); r = c.fetchone(); conn.close()
+    return r[0] if r else None
+
+def set_seal_talent(sid, talent):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("INSERT OR REPLACE INTO seal_talents (seal_id, talent) VALUES (?, ?)", (sid, talent))
+    conn.commit(); conn.close()
+
+def talent_on_attack(sid, dmg, talent):
+    if talent == "mage": return int(dmg * 0.3)
+    elif talent == "summoner": return 15
+    elif talent == "archer":
+        if random.random() < 0.20: return int(dmg * 0.5)
+        return 0
+    return 0
+
+def talent_on_defend(dmg, talent):
+    if talent == "warrior": return int(dmg * 0.75)
+    return dmg
+
+def talent_heal_battle(max_hp, talent):
+    if talent == "healer": return int(max_hp * 0.20)
+    return 0
+
+def healer_ooc_heal(sid):
+    seal = get_seal(sid)
+    if not seal: return "Тюлень не найден!"
+    if get_seal_talent(sid) != "healer": return "Это не хиллер!"
+    es, ed, eh = get_effective_stats(sid)
+    if seal[3] >= eh: return "Уже здоров!"
+    cd = seal[25] if len(seal) > 25 else None
+    if cd:
+        try:
+            rem = timedelta(minutes=15) - (datetime.now() - datetime.fromisoformat(cd))
+            if rem.total_seconds() > 0:
+                return f"⏳ {int(rem.total_seconds()//60)}м {int(rem.total_seconds()%60)}с"
+        except: pass
+    nh = min(eh, seal[3] + 25); healed = nh - seal[3]
+    update_seal(sid, health=nh, healer_cd=datetime.now().isoformat())
+    return f"💚 +{healed} HP!"
+# ==================== ЛОТЕРЕЯ ====================
+def buy_lottery_ticket(uid):
+    if get_fishnets(uid) < LOTTERY_TICKET_PRICE: return False, "Не хватает 🐟!"
+    add_fishnets(uid, -LOTTERY_TICKET_PRICE)
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("INSERT INTO lottery_tickets (user_id, ticket_date) VALUES (?, ?)", (uid, date.today().isoformat()))
+    conn.commit(); conn.close()
+    return True, "Билет куплен!"
+
+def get_lottery_tickets_count(uid):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM lottery_tickets WHERE user_id=? AND ticket_date=?", (uid, date.today().isoformat()))
+    r = c.fetchone(); conn.close(); return r[0] if r else 0
+
+def get_total_tickets_today():
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM lottery_tickets WHERE ticket_date=?", (date.today().isoformat(),))
+    r = c.fetchone(); conn.close(); return r[0] if r else 0
+
+def lottery_draw_thread():
+    while True:
+        time.sleep(60)
+        now = datetime.now()
+        if now.hour == 21 and now.minute == 0:
+            today = date.today().isoformat()
+            conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+            c.execute("SELECT * FROM lottery_results WHERE draw_date=?", (today,))
+            if c.fetchone(): conn.close(); time.sleep(3600); continue
+            c.execute("SELECT user_id, COUNT(*) FROM lottery_tickets WHERE ticket_date=? GROUP BY user_id", (today,))
+            participants = c.fetchall()
+            if not participants: conn.close(); time.sleep(3600); continue
+            total_pool = sum(p[1] for p in participants) * LOTTERY_TICKET_PRICE
+            weighted = []
+            for uid, cnt in participants: weighted.extend([uid] * cnt)
+            winner = random.choice(weighted)
+            add_fishnets(winner, total_pool)
+            c.execute("INSERT INTO lottery_results (draw_date, winner_id, prize) VALUES (?, ?, ?)", (today, winner, total_pool))
+            conn.commit(); conn.close()
+            try: bot.send_message(winner, f"🎰 *Лотерея!*\n\nВы выиграли 🐟{total_pool}!", parse_mode='Markdown')
+            except: pass
+            time.sleep(3600)
+
+# ==================== КАРТЫ СОКРОВИЩ ====================
+def treasure_start_exp(uid, sid):
+    seal = get_seal(sid)
+    if not seal or seal[1] != uid: return "Не ваш тюлень!"
+    if seal[3] <= 10: return "HP слишком мало!"
+    if get_item_qty(uid, "Карта сокровищ 🗺️") <= 0: return "Нет карт!"
+    remove_from_inv(uid, "Карта сокровищ 🗺️")
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("DELETE FROM treasure_runs WHERE user_id=?", (uid,))
+    c.execute("INSERT INTO treasure_runs (user_id, seal_id, current_step, active) VALUES (?, ?, 0, 1)", (uid, sid))
+    conn.commit(); conn.close()
+    return None
+
+def treasure_get_step_text(uid, sid):
+    seal = get_seal(sid)
+    if not seal: return None, None
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT current_step FROM treasure_runs WHERE user_id=? AND active=1", (uid,))
+    r = c.fetchone(); conn.close()
+    if not r: return None, None
+    step = r[0]
+    if step >= TREASURE_TOTAL_STEPS:
+        bonus_fn = random.randint(30, 60); add_fishnets(uid, bonus_fn)
+        add_to_inv(uid, "Сундук [A] 📦", "chest", 1)
+        conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+        c.execute("UPDATE treasure_runs SET active=0 WHERE user_id=?", (uid,))
+        conn.commit(); conn.close()
+        return f"🏆 *Экспедиция завершена!*\n\n🎁 Бонус: 🐟{bonus_fn}\n📦 Сундук [A] 📦", None
+    t = f"🗺️ *Экспедиция — Шаг {step+1}/{TREASURE_TOTAL_STEPS}*\n\n🦭 {seal[2]}: ❤️{seal[3]}/{seal[4]}\n\nВыберите действие:"
+    m = types.InlineKeyboardMarkup()
+    m.add(types.InlineKeyboardButton("🎲 Рискнуть", callback_data=f"trr_{sid}_risk"))
+    m.add(types.InlineKeyboardButton("🛡️ Осторожно", callback_data=f"trr_{sid}_safe"))
+    return t, m
+
+def treasure_step_do(uid, sid, choice):
+    seal = get_seal(sid)
+    if not seal: return "Тюлень не найден!"
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT current_step FROM treasure_runs WHERE user_id=? AND active=1", (uid,))
+    r = c.fetchone()
+    if not r: conn.close(); return "Нет активной экспедиции!"
+    step = r[0]; conn.close()
+    msg = ""
+    if choice == "risk":
+        if random.random() < 0.6:
+            fn = random.randint(20, 50); add_fishnets(uid, fn)
+            msg = f"🎲 Удача! Найдено 🐟{fn}!"
+        else:
+            dmg = random.randint(10, 20); update_seal(sid, health=max(1, seal[3] - dmg))
+            msg = f"💀 Засада! −{dmg} HP!"
+    else:
+        fn = random.randint(5, 15); add_fishnets(uid, fn)
+        msg = f"🛡️ Осторожно. Найдено 🐟{fn}."
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("UPDATE treasure_runs SET current_step=? WHERE user_id=?", (step + 1, uid))
+    conn.commit(); conn.close()
     return msg
 
 # ==================== ПРИВЯЗКА К ТОПИКУ ====================
@@ -1060,6 +1225,8 @@ def show_main_menu(chat_id):
     m.add(types.KeyboardButton("📦 Биржа"), types.KeyboardButton("🏛 Фракции"))
     m.add(types.KeyboardButton("🤺 Дуэль"), types.KeyboardButton("📚 Цепочки"))
     m.add(types.KeyboardButton("🐋 Клан"), types.KeyboardButton("💰 Продажа"))
+    m.add(types.KeyboardButton("🎯 Талант"), types.KeyboardButton("🎰 Лотерея"))
+    m.add(types.KeyboardButton("🗺️ Сокровища"))
     bot.send_message(chat_id, "Выберите действие:", reply_markup=m)
 
 @bot.message_handler(commands=['profile'])
@@ -1298,37 +1465,42 @@ def menu_seal(message):
 def seal_selected(call, sid=None):
     if sid is None:
         try:
-            sid = int(call.data.split("_")[1])
+            sid = int(call.data.split("_"))
         except (IndexError, ValueError):
             bot.answer_callback_query(call.id, "Ошибка!", show_alert=True)
             return
+    
     check_baby_growth(sid)
     seal = get_seal(sid)
     if not seal:
         bot.answer_callback_query(call.id, "Тюлень не найден!", show_alert=True)
         return
+    
     uid = call.from_user.id
     fn = get_fishnets(uid)
     es, ed, eh = get_effective_stats(sid)
     mb = get_mood_bonus(sid)
     skills = get_seal_skills(sid)
     marriage_info = get_marriage_info(sid)
+    
+    # Получаем талант один раз
+    talent = get_seal_talent(sid)
 
-    t = f"🦭 *{seal[2]}*\n🐟 Рыбнетки: {fn}\n\n📊 Ур:{seal[9]} (оп:{seal[10]}/{exp_for_level(seal[9])})\n"
-    t += f"❤️ Здоровье: {seal[3]}/{seal[4]}"
-    if eh != seal[4]: t += f" (с экип: {eh})"
-    t += f"\n😊 Настроение: {seal[5]}"
+    t = f"🦭 *{seal}*\n🐟 Рыбнетки: {fn}\n\n📊 Ур:{seal} (оп:{seal}/{exp_for_level(seal)})\n"
+    t += f"❤️ Здоровье: {seal}/{seal}"
+    if eh != seal: t += f" (с экип: {eh})"
+    t += f"\n😊 Настроение: {seal}"
     if mb > 0: t += f" (+{mb})"
-    t += f"\n🍖 Сытость: {seal[6]}\n💪 Сила: {seal[7]}"
-    if es != seal[7]: t += f" (с экип: {es})"
-    t += f"\n🛡️ Защита: {seal[8]}"
-    if ed != seal[8]: t += f" (с экип: {ed})"
+    t += f"\n🍖 Сытость: {seal}\n💪 Сила: {seal}"
+    if es != seal: t += f" (с экип: {es})"
+    t += f"\n🛡️ Защита: {seal}"
+    if ed != seal: t += f" (с экип: {ed})"
     t += "\n"
 
     if marriage_info:
         t += f"\n💍 В браке с: {marriage_info}\n"
 
-    ap = seal[23] if len(seal) > 23 else None
+    ap = seal if len(seal) > 23 else None
     if ap:
         ap_label = ap
         for r in CRAFT_RECIPES:
@@ -1341,6 +1513,10 @@ def seal_selected(call, sid=None):
         t += "\n*Навыки:*\n"
         for sk in skills: t += f"  {sk['name']}\n"
 
+    # Вывод таланта (Блок 7)
+    if talent:
+        t += f"\n🎯 Талант: {TALENTS[talent]['name']}\n"
+
     eq = []
     slots = [13, 14, 15, 16, 17]
     icons = ["⚔️", "🛡️", "🪖", "🛡️", "🎀"]
@@ -1352,27 +1528,31 @@ def seal_selected(call, sid=None):
                 ench = get_enchantment_for_item(uid, item_name)
             suffix = f" [{ench}]" if ench else ""
             eq.append(f"{icon}{item_name}{suffix}")
-    if len(seal) > 22 and seal[22]:
-        eq.append(f"✨{seal[22]}")
+    if len(seal) > 22 and seal:
+        eq.append(f"✨{seal}")
     t += f"\n🎒 Экип: {', '.join(eq) if eq else 'нет'}\n"
 
-    if len(seal) > 11 and seal[11] == 1:
+    if len(seal) > 11 and seal == 1:
         try:
-            born = datetime.fromisoformat(seal[12])
+            born = datetime.fromisoformat(seal)
             days_left = BABY_GROW_DAYS - (datetime.now() - born).days
             t += f"\n🍼 Тюленёнок! Вырастет через {max(0, days_left)} дн.\n"
         except Exception:
             t += "\n🍼 Тюленёнок!\n"
 
+    # Формирование клавиатуры
     m = types.InlineKeyboardMarkup(row_width=2)
     m.add(
         types.InlineKeyboardButton("🍖 Кормить", callback_data=f"feed_{sid}"),
         types.InlineKeyboardButton("🎾 Играть", callback_data=f"play_{sid}")
     )
-    m.add(
-        types.InlineKeyboardButton("💊 Лечить", callback_data=f"heal_{sid}"),
-        types.InlineKeyboardButton("👕 Экип", callback_data=f"equip_{sid}")
-    )
+    
+    # Добавляем пару кнопок: Лечить всегда, Хиллер - только если есть талант
+    row = [types.InlineKeyboardButton("💊 Лечить", callback_data=f"heal_{sid}")]
+    if talent == "healer":
+        row.append(types.InlineKeyboardButton("💚 Лечение хиллера", callback_data=f"tlheal_{sid}"))
+    m.add(*row)
+
     m.add(
         types.InlineKeyboardButton("👕 Снять", callback_data=f"unequip_{sid}"),
         types.InlineKeyboardButton("🧪 Зелье", callback_data=f"spot_{sid}")
@@ -1383,11 +1563,13 @@ def seal_selected(call, sid=None):
     )
     if marriage_info:
         m.add(types.InlineKeyboardButton("💔 Развод", callback_data=f"divorce_{sid}"))
+    
+    # Кнопка "Назад"
     m.add(types.InlineKeyboardButton("◀️ Назад", callback_data="back_main"))
 
     cid = call.message.chat.id
     mid = call.message.message_id
-    photo_path = seal[20] if len(seal) > 20 else None
+    photo_path = seal if len(seal) > 20 else None
 
     if photo_path and os.path.exists(photo_path):
         try: bot.delete_message(cid, mid)
@@ -1402,6 +1584,7 @@ def seal_selected(call, sid=None):
             bot.edit_message_text(t, cid, mid, reply_markup=m, parse_mode='Markdown')
         except Exception:
             bot.send_message(cid, t, reply_markup=m, parse_mode='Markdown')
+
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("feed_"))
 def seal_feed(call):
@@ -1869,6 +2052,8 @@ def do_battle(call):
         if ptn: parts.append(f"+{int(ptn*100)}% урон 😤")
         log.append(f"🧪 Активное зелье: {' '.join(parts)}")
     shp = seal[3]
+    talent = get_seal_talent(sid)
+    healer_used = False
     for rnd in range(1, 21):
         if shp <= 0 or bhp <= 0: break
         dmg = es
@@ -1876,8 +2061,14 @@ def do_battle(call):
         if random.random() < sum(0.15 for s in skills if s["effect"]=="crit_15"): dmg *= 2; log.append("⚡ Крит!")
         dmg = max(1, dmg - bdef + random.randint(-3,5))
         if ptn: dmg = int(dmg * (1 + ptn))
+        if talent: dm = talent_on_defend(dm, talent)
         bhp -= dmg
         log.append(f"Р{rnd}: {seal[2]} →{dmg} (босс {max(0,bhp)}❤️)")
+        if talent:
+            extra = talent_on_attack(sid, dmg, talent)
+            if extra > 0:
+                bhp -= extra
+                log.append(f"  ✨ Талант: +{extra}!")
         if bhp <= 0: break
         if psp > 0 and bhp > 0 and random.random() < 0.5:
             d2 = max(1, es - bdef + random.randint(-3,5))
@@ -1896,6 +2087,11 @@ def do_battle(call):
         if any(s["effect"]=="dmg_reduce_10" for s in skills): dm = int(dm*0.9)
         shp -= dm; log.append(f"{bn} →{dm} ({seal[2]} {max(0,shp)}❤️)")
         if prg > 0: shp = min(eh, shp + prg)
+        if talent and not healer_used:
+            ht = talent_heal_battle(eh, talent)
+            if ht > 0:
+                shp = min(eh, shp + ht); healer_used = True
+                log.append(f"💚 Талант: +{ht}HP!")
         ls = sum(1 for s in skills if s["effect"]=="lifesteal_5")
         if ls: heal = int(dm*0.05*ls); shp = min(eh, shp+heal)
         if any(s["effect"]=="thorns" for s in skills): bhp -= int(dm*0.2)
@@ -2010,6 +2206,8 @@ def dng_atk(call):
         if pd: parts.append(f"+{pd}🛡️")
         if ptn: parts.append(f"+{int(ptn*100)}% урон 😤")
         log.append(f"🧪 Зелье: {' '.join(parts)}")
+        talent = get_seal_talent(sid)
+    healer_used = False
     while shp > 0 and mon["hp"] > 0:
         d = es
         if any(s["effect"]=="berserk" for s in skills) and shp < eh*0.3: d = int(d*1.5)
@@ -2017,6 +2215,12 @@ def dng_atk(call):
         d = max(1, d - mon["def"] + random.randint(-2, 5))
         if ptn: d = int(d * (1 + ptn))
         mon["hp"] -= d
+        if talent:
+            extra = talent_on_attack(sid, d, talent)
+            if extra > 0:
+                mon["hp"] -= extra
+                log.append(f"✨ Талант: +{extra}!")
+
         log.append(f"{seal[2]} →{d} (монстр {max(0, mon['hp'])}❤️)")
         if mon["hp"] <= 0: break
         if psp > 0 and mon["hp"] > 0 and random.random() < 0.5:
@@ -2033,10 +2237,16 @@ def dng_atk(call):
         dodge_chance = sum(0.10 for s in skills if s["effect"]=="dodge_10") + pdd / 100.0
         if random.random() < dodge_chance: log.append("💨 Уклонение!"); continue
         dm = max(1, mon["str"] - ed + random.randint(-1, 4))
+        if talent: dm = talent_on_defend(dm, talent)
         if any(s["effect"]=="dmg_reduce_10" for s in skills): dm = int(dm*0.9)
         shp -= dm
         log.append(f"{mon['name']} →{dm} ({seal[2]} {max(0, shp)}❤️)")
         if prg > 0: shp = min(eh, shp + prg)
+    if talent and not healer_used:
+            ht = talent_heal_battle(eh, talent)
+            if ht > 0:
+                shp = min(eh, shp + ht); healer_used = True
+                log.append(f"💚 Талант: +{ht}HP!")
         ls = sum(1 for s in skills if s["effect"]=="lifesteal_5")
         if ls: heal = int(dm*0.05*ls); shp = min(eh, shp+heal)
         if any(s["effect"]=="thorns" for s in skills): mon["hp"] -= int(dm*0.2)
@@ -2185,6 +2395,9 @@ def duel_accept(call):
         m.add(types.InlineKeyboardButton(f"{s[2]} (ур.{s[9]})", callback_data=f"duseal_{did}_{s[0]}"))
     bot.edit_message_text("Выберите тюленя:", call.message.chat.id, call.message.message_id, reply_markup=m)
 
+    ctalent = get_seal_talent(csid); otalent = get_seal_talent(osid)
+    ch_used = False; oh_used = False
+
 @bot.callback_query_handler(func=lambda c: c.data.startswith("duseal_"))
 def duel_seal(call):
     uid = call.from_user.id; p = call.data.split("_"); did = int(p[1]); osid = int(p[2])
@@ -2215,6 +2428,11 @@ def duel_seal(call):
         cd = max(1, cd - oed + random.randint(-3,5))
         if cptn: cd = int(cd * (1 + cptn))
         ohp -= cd
+        if ctalent:
+            extra = talent_on_attack(csid, cd, ctalent)
+            if extra > 0:
+                ohp -= extra; log.append(f"✨ {cseal[2]}: +{extra}!")
+
         log.append(f"Р{rnd}: {cseal[2]} →{cd} ({oseal[2]} {max(0,ohp)}❤️)")
         if ohp <= 0: break
         if cpsp > 0 and ohp > 0 and random.random() < 0.5:
@@ -2233,12 +2451,19 @@ def duel_seal(call):
         cdodge = cpdd / 100.0 + sum(0.10 for s in csk if s["effect"]=="dodge_10")
         if random.random() < cdodge: log.append("💨 Уклонение!"); continue
         od = max(1, od - ced + random.randint(-3,5))
+        if ctalent: od = talent_on_defend(od, ctalent)
         if any(s["effect"]=="dmg_reduce_10" for s in csk): od = int(od*0.9)
         if optn: od = int(od * (1 + optn))
         chp -= od
         log.append(f"{oseal[2]} →{od} ({cseal[2]} {max(0,chp)}❤️)")
         if cprg > 0: chp = min(ceh, chp + cprg)
+        if ctalent and not ch_used:
+            ht = talent_heal_battle(ceh, ctalent)
+            if ht > 0: chp = min(ceh, chp + ht); ch_used = True; log.append(f"💚 {cseal[2]}: +{ht}HP!")
         if oprg > 0: ohp = min(oeh, ohp + oprg)
+        if otalent and not oh_used:
+            ht = talent_heal_battle(oeh, otalent)
+            if ht > 0: ohp = min(oeh, ohp + ht); oh_used = True; log.append(f"💚 {oseal[2]}: +{ht}HP!")
         ls_c = sum(1 for s in csk if s["effect"]=="lifesteal_5")
         if ls_c: heal = int(od*0.05*ls_c); chp = min(ceh, chp+heal)
         ls_o = sum(1 for s in osk if s["effect"]=="lifesteal_5")
@@ -2525,13 +2750,28 @@ def clan_dng_atk(call):
     mon = CLAN_DUNGEON_MONSTERS[fl-1].copy()
     ts = sum(get_effective_stats(s[0])[0] for s in all_seals)
     td = sum(get_effective_stats(s[0])[1] for s in all_seals)
+    talent_b = {}
+    for s in all_seals:
+        t = get_seal_talent(s[0])
+        if t: talent_b[t] = talent_b.get(t, 0) + 1
+
     seal_hp = {s[0]: s[3] for s in all_seals}; thp = sum(seal_hp.values())
     log = [f"🏰 Этаж {fl}: {len(all_seals)} тюленей vs {mon['name']}"]
     while thp > 0 and mon["hp"] > 0:
         dmg = max(1, ts - mon["def"] + random.randint(-5, 10)); mon["hp"] -= dmg
+        if talent_b.get("mage",0) > 0:
+            ex = int(dmg * 0.3 * talent_b["mage"]); mon["hp"] -= ex; log.append(f"✨ Маги: +{ex}!")
+        if talent_b.get("summoner",0) > 0:
+            ex = 15 * talent_b["summoner"]; mon["hp"] -= ex; log.append(f"🐾 Призыв: +{ex}!")
+        if talent_b.get("archer",0) > 0 and random.random() < 0.2 * talent_b["archer"]:
+            ex = int(dmg * 0.5); mon["hp"] -= ex; log.append(f"🏹 Залп: +{ex}!")
+
         log.append(f"Тюлени →{dmg} (монстр {max(0, mon['hp'])}❤️)")
         if mon["hp"] <= 0: break
         dm = max(1, mon["str"] - td + random.randint(-2, 6))
+        if talent_b.get("warrior",0) > 0:
+            dm = int(dm * (1 - 0.25 * min(1, talent_b["warrior"] / len(all_seals))))
+
         target = random.choice(all_seals)
         old_hp = seal_hp[target[0]]
         new_hp = max(1, old_hp - dm)
@@ -2808,6 +3048,128 @@ def quest_claim(call):
         reward_msg += f", 🍴{food_r}"
     bot.answer_callback_query(call.id, f"Получено: {reward_msg}!")
     show_quests(uid, call.message.chat.id, call.message.message_id)
+# ==================== ТАЛАНТЫ — ОБРАБОТЧИКИ ====================
+@bot.message_handler(commands=['talent'])
+@bot.message_handler(func=lambda m: m.text == "🎯 Талант")
+def menu_talent(message):
+    uid = message.from_user.id; chat_id = message.chat.id
+    seals = get_player_seals(uid)
+    if not seals: bot.send_message(chat_id, "Нет тюленей!"); return
+    m = types.InlineKeyboardMarkup()
+    for s in seals:
+        if s[11] == 1: continue
+        talent = get_seal_talent(s[0])
+        label = f"{s[2]} (ур.{s[9]})" + (f" — {TALENTS[talent]['name']}" if talent else " — нет")
+        m.add(types.InlineKeyboardButton(label, callback_data=f"talsel_{s[0]}"))
+    bot.send_message(chat_id, "🎯 *Таланты*\n\nВыберите тюленя:", parse_mode='Markdown', reply_markup=m)
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("talsel_"))
+def talent_select_seal(call):
+    uid = call.from_user.id; sid = int(call.data.split("_")[1])
+    seal = get_seal(sid)
+    if not seal or seal[1] != uid:
+        bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True); return
+    current = get_seal_talent(sid)
+    t = f"🎯 *Талант: {seal[2]}*\n\n"
+    if current: t += f"Текущий: {TALENTS[current]['name']}\n{TALENTS[current]['desc']}\n\n"
+    t += "Выберите талант:"
+    m = types.InlineKeyboardMarkup()
+    for key, td in TALENTS.items():
+        mark = "✅ " if key == current else ""
+        m.add(types.InlineKeyboardButton(f"{mark}{td['name']}", callback_data=f"talset_{sid}_{key}"))
+    m.add(types.InlineKeyboardButton("◀️", callback_data="back_main"))
+    bot.edit_message_text(t, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=m)
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("talset_"))
+def talent_choose(call):
+    uid = call.from_user.id; p = call.data.split("_"); sid = int(p[1]); talent_key = p[2]
+    seal = get_seal(sid)
+    if not seal or seal[1] != uid:
+        bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True); return
+    if talent_key not in TALENTS: bot.answer_callback_query(call.id, "Неизвестный талант!"); return
+    set_seal_talent(sid, talent_key)
+    update_seal(sid, healer_cd=None)
+    bot.answer_callback_query(call.id, f"Установлен: {TALENTS[talent_key]['name']}!")
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("tlheal_"))
+def talent_heal_ooc(call):
+    uid = call.from_user.id; sid = int(call.data.split("_")[1])
+    seal = get_seal(sid)
+    if not seal or seal[1] != uid:
+        bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True); return
+    result = healer_ooc_heal(sid)
+    bot.answer_callback_query(call.id, result)
+    seal_selected(call, sid)
+
+# ==================== ЛОТЕРЕЯ — ОБРАБОТЧИКИ ====================
+@bot.message_handler(commands=['lottery'])
+@bot.message_handler(func=lambda m: m.text == "🎰 Лотерея")
+def menu_lottery(message):
+    uid = message.from_user.id; chat_id = message.chat.id
+    my_t = get_lottery_tickets_count(uid)
+    total_t = get_total_tickets_today()
+    pool = total_t * LOTTERY_TICKET_PRICE
+    t = f"🎰 *Лотерея*\n\nЦена билета: 🐟{LOTTERY_TICKET_PRICE}\nВаши билеты: {my_t}\nВсего: {total_t}\nПриз: 🐟{pool}\nРозыгрыш в 21:00\n\n"
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT draw_date, winner_id, prize FROM lottery_results ORDER BY draw_date DESC LIMIT 1")
+    last = c.fetchone(); conn.close()
+    if last: t += f"Последний победитель: 🐟{last[2]} ({last[0]})\n"
+    m = types.InlineKeyboardMarkup()
+    m.add(types.InlineKeyboardButton(f"Купить билет (🐟{LOTTERY_TICKET_PRICE})", callback_data="lotbuy"))
+    bot.send_message(chat_id, t, parse_mode='Markdown', reply_markup=m)
+
+@bot.callback_query_handler(func=lambda c: c.data == "lotbuy")
+def lottery_buy(call):
+    uid = call.from_user.id
+    ok, msg = buy_lottery_ticket(uid)
+    bot.answer_callback_query(call.id, msg)
+
+# ==================== КАРТЫ СОКРОВИЩ — ОБРАБОТЧИКИ ====================
+@bot.message_handler(commands=['treasure'])
+@bot.message_handler(func=lambda m: m.text == "🗺️ Сокровища")
+def menu_treasure(message):
+    uid = message.from_user.id; chat_id = message.chat.id
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT seal_id FROM treasure_runs WHERE user_id=? AND active=1", (uid,))
+    active = c.fetchone(); conn.close()
+    if active:
+        t, m = treasure_get_step_text(uid, active[0])
+        if t and m: bot.send_message(chat_id, t, parse_mode='Markdown', reply_markup=m)
+        elif t: bot.send_message(chat_id, t, parse_mode='Markdown')
+        return
+    qty = get_item_qty(uid, "Карта сокровищ 🗺️")
+    if qty <= 0:
+        bot.send_message(chat_id, "🗺️ Нет карт сокровищ!\n\nКарты можно найти во время работы или игры.")
+        return
+    seals = get_player_seals(uid)
+    if not seals: bot.send_message(chat_id, "Нет тюленей!"); return
+    m = types.InlineKeyboardMarkup()
+    for s in seals:
+        if s[11] == 1 or s[3] <= 10: continue
+        m.add(types.InlineKeyboardButton(f"{s[2]} (ур.{s[9]}) ❤️{s[3]}", callback_data=f"trsel_{s[0]}"))
+    if not m.keyboard: bot.send_message(chat_id, "Нет тюленей с HP > 10!"); return
+    bot.send_message(chat_id, f"🗺️ *Карты: {qty}*\n\nВыберите тюленя:", parse_mode='Markdown', reply_markup=m)
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("trsel_"))
+def treasure_sel(call):
+    uid = call.from_user.id; sid = int(call.data.split("_")[1])
+    result = treasure_start_exp(uid, sid)
+    if result: bot.answer_callback_query(call.id, result); return
+    t, m = treasure_get_step_text(uid, sid)
+    if t and m: bot.edit_message_text(t, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=m)
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("trr_"))
+def treasure_action(call):
+    uid = call.from_user.id; p = call.data.split("_"); sid = int(p[1]); choice = p[2]
+    msg = treasure_step_do(uid, sid, choice)
+    bot.answer_callback_query(call.id, msg)
+    t, m = treasure_get_step_text(uid, sid)
+    if t and m:
+        try: bot.edit_message_text(t, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=m)
+        except: bot.send_message(call.message.chat.id, t, parse_mode='Markdown', reply_markup=m)
+    elif t:
+        try: bot.edit_message_text(t, call.message.chat.id, call.message.message_id, parse_mode='Markdown')
+        except: bot.send_message(call.message.chat.id, t, parse_mode='Markdown')
 
 # ==================== ФОНОВЫЕ ПОТОКИ ====================
 def stats_decay():
@@ -2842,6 +3204,7 @@ def health_regen():
 
 threading.Thread(target=stats_decay, daemon=True).start()
 threading.Thread(target=health_regen, daemon=True).start()
+threading.Thread(target=lottery_draw_thread, daemon=True).start()
 
 # ==================== КОМАНДЫ В МЕНЮ ====================
 bot.set_my_commands([
@@ -2859,6 +3222,10 @@ bot.set_my_commands([
     types.BotCommand("leaderboard", "Лидеры"),
     types.BotCommand("bindtopic", "Привязать к топику"),
     types.BotCommand("unbindtopic", "Отвязать от топика"),
+    types.BotCommand("talent", "Талант"),
+    types.BotCommand("lottery", "Лотерея"),
+    types.BotCommand("treasure", "Карты сокровищ"),
+
 ])
 
 if __name__ == "__main__":
