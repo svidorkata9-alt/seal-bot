@@ -7,7 +7,7 @@ TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "PLACEHOLDER_TOKEN")
 bot = telebot.TeleBot(TOKEN)
 DB_PATH = "/data/seal_life.db"
 BACKUP_DIR = "backups"
-PHOTOS_DIR = "photos"   # ДОБАВИТЬ ЭТУ СТРОКУ
+PHOTOS_DIR = "photos"
 MAX_SEALS = 5
 FISHING_COOLDOWN_MIN = 10
 MAX_CLAN_MEMBERS = 20
@@ -15,6 +15,19 @@ CLAN_DUNGEON_MIN_LEVEL = 4
 CLAN_DUNGEON_FLOORS = 10
 PLAY_COOLDOWN_MIN = 15
 BABY_GROW_DAYS = 3
+LOTTERY_TICKET_PRICE = 50
+TREASURE_TOTAL_STEPS = 10
+
+# ==================== БД: thread-local ====================
+_db_local = threading.local()
+
+def get_conn():
+    if not hasattr(_db_local, "conn") or _db_local.conn is None:
+        _db_local.conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30)
+        _db_local.conn.execute("PRAGMA journal_mode=WAL")
+        _db_local.conn.execute("PRAGMA synchronous=NORMAL")
+        _db_local.conn.execute("PRAGMA cache_size=-64000")
+    return _db_local.conn
 
 # ==================== БЭКАП И МИГРАЦИИ ====================
 def backup_db():
@@ -23,7 +36,7 @@ def backup_db():
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     bp = os.path.join(BACKUP_DIR, f"seal_life_{ts}.db")
     shutil.copy2(DB_PATH, bp)
-    bks = sorted([os.path.join(BACKUP_DIR,f) for f in os.listdir(BACKUP_DIR) if f.endswith(".db")], key=os.path.getmtime)
+    bks = sorted([os.path.join(BACKUP_DIR, f) for f in os.listdir(BACKUP_DIR) if f.endswith(".db")], key=os.path.getmtime)
     for o in bks[:-10]: os.remove(o)
     return bp
 
@@ -38,7 +51,7 @@ def get_db_version(conn):
 def set_db_version(conn, v):
     c = conn.cursor()
     c.execute("CREATE TABLE IF NOT EXISTS _meta (key TEXT PRIMARY KEY, value TEXT)")
-    c.execute("INSERT OR REPLACE INTO _meta (key,value) VALUES ('schema_version',?)", (str(v),))
+    c.execute("INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', ?)", (str(v),))
     conn.commit()
 
 def migration_1(c):
@@ -72,15 +85,15 @@ def migration_2(c):
     c.execute("CREATE TABLE IF NOT EXISTS clan_members (id INTEGER PRIMARY KEY AUTOINCREMENT, clan_id INTEGER, user_id INTEGER, joined_at TEXT)")
     c.execute("CREATE TABLE IF NOT EXISTS clan_dungeons (id INTEGER PRIMARY KEY AUTOINCREMENT, clan_id INTEGER, current_floor INTEGER DEFAULT 1, active INTEGER DEFAULT 0, started_by INTEGER)")
     chains = [
-        (1,"Потерянный компас","Старый мудрый тюлень потерял компас во время шторма.",
-         json.dumps([{"type":"dungeon_floor","target":3,"desc":"Дойдите до 3-го этажа подземелья"},{"type":"battle_count","target":2,"desc":"Победите 2 боссов"},{"type":"craft_item","target":1,"desc":"Скрафтите 1 предмет"}]),
-         json.dumps({"item":"Компас мудреца 🧭","type":"accessory"}),200),
-        (2,"Тайна глубин","Древняя табличка говорит о сокровище на дне океана.",
-         json.dumps([{"type":"dungeon_complete","target":1,"desc":"Пройдите 1 подземелье полностью"},{"type":"reach_level","target":10,"desc":"Достигните 10 уровня"}]),
-         json.dumps({"item":"Амулет глубин 🌊","type":"accessory"}),500),
-        (3,"Король арены","Станьте легендой среди тюленей!",
-         json.dumps([{"type":"duel_win","target":3,"desc":"Победите 3 игроков в дуэлях"},{"type":"battle_count","target":5,"desc":"Победите 5 боссов"}]),
-         json.dumps({"item":"Корона чемпиона 👑","type":"accessory"}),1000),
+        (1, "Потерянный компас", "Старый мудрый тюлень потерял компас во время шторма.",
+         json.dumps([{"type": "dungeon_floor", "target": 3, "desc": "Дойдите до 3-го этажа подземелья"}, {"type": "battle_count", "target": 2, "desc": "Победите 2 боссов"}, {"type": "craft_item", "target": 1, "desc": "Скрафтите 1 предмет"}]),
+         json.dumps({"item": "Компас мудреца 🧭", "type": "accessory"}), 200),
+        (2, "Тайна глубин", "Древняя табличка говорит о сокровище на дне океана.",
+         json.dumps([{"type": "dungeon_complete", "target": 1, "desc": "Пройдите 1 подземелье полностью"}, {"type": "reach_level", "target": 10, "desc": "Достигните 10 уровня"}]),
+         json.dumps({"item": "Амулет глубин 🌊", "type": "accessory"}), 500),
+        (3, "Король арены", "Станьте легендой среди тюленей!",
+         json.dumps([{"type": "duel_win", "target": 3, "desc": "Победите 3 игроков в дуэлях"}, {"type": "battle_count", "target": 5, "desc": "Победите 5 боссов"}]),
+         json.dumps({"item": "Корона чемпиона 👑", "type": "accessory"}), 1000),
     ]
     c.executemany("INSERT OR REPLACE INTO quest_chains VALUES (?,?,?,?,?,?)", chains)
 
@@ -110,6 +123,7 @@ def migration_6(c):
     except sqlite3.OperationalError: pass
     try: c.execute("ALTER TABLE daily_quests ADD COLUMN food_reward TEXT")
     except sqlite3.OperationalError: pass
+
 def migration_7(c):
     c.execute("CREATE TABLE IF NOT EXISTS seal_talents (seal_id INTEGER PRIMARY KEY, talent TEXT)")
     try: c.execute("ALTER TABLE seals ADD COLUMN healer_cd TEXT")
@@ -136,7 +150,6 @@ def run_migrations():
     set_db_version(conn, len(MIGRATIONS))
     conn.commit()
     conn.close()
-
 # ==================== КОНСТАНТЫ ====================
 SHOP_ITEMS = {
     "Апельсин 🍊": {"price": 15, "type": "food", "satiety": 25, "mood": 10},
@@ -158,6 +171,7 @@ SHOP_ITEMS = {
     "Радужный пояс 🌈": {"price": 80, "type": "accessory"},
     "Пустая колба 🧪": {"price": 15, "type": "potion_base"},
 }
+
 ITEM_BONUSES = {
     "Костяной меч 🗡️": {"str": 5}, "Акулий клык 🦷": {"str": 8}, "Трезубец 🔱": {"str": 12}, "Китовый клинок 🐋": {"str": 15},
     "Ядовитый клинок ☠️": {"str": 10}, "Ядовитый дротик 🎯": {"str": 7},
@@ -274,33 +288,33 @@ POTION_EFFECTS = {
 }
 
 ARTIFACTS = {
-    "F": [{"name":"Ржавый ключ 🗝️","str":2,"def":1,"hp":5},{"name":"Старый компас 🧭","str":1,"def":2,"hp":5},{"name":"Обломок ракушки 🐚","str":2,"def":2,"hp":3}],
-    "E": [{"name":"Медный амулет 🟤","str":4,"def":3,"hp":10},{"name":"Рыбацкий талисман 🎣","str":3,"def":4,"hp":12}],
-    "D": [{"name":"Серебряный медальон 🥈","str":7,"def":5,"hp":20},{"name":"Коралловый браслет 🪸","str":6,"def":6,"hp":18}],
-    "C": [{"name":"Жемчужина силы ⚪","str":12,"def":8,"hp":30},{"name":"Акулий талисман 🦈","str":10,"def":10,"hp":25}],
-    "B": [{"name":"Кристалл глубин 💎","str":18,"def":12,"hp":50},{"name":"Раковина Левиафана 🐚","str":15,"def":15,"hp":45}],
-    "A": [{"name":"Сердце океана 💙","str":28,"def":18,"hp":80},{"name":"Корона Морского Царя 👑","str":25,"def":20,"hp":75}],
-    "S": [{"name":"Слеза Посейдона 💧","str":45,"def":30,"hp":150},{"name":"Трезубец Бездны 🔱","str":50,"def":25,"hp":120}],
+    "F": [{"name": "Ржавый ключ 🗝️", "str": 2, "def": 1, "hp": 5}, {"name": "Старый компас 🧭", "str": 1, "def": 2, "hp": 5}, {"name": "Обломок ракушки 🐚", "str": 2, "def": 2, "hp": 3}],
+    "E": [{"name": "Медный амулет 🟤", "str": 4, "def": 3, "hp": 10}, {"name": "Рыбацкий талисман 🎣", "str": 3, "def": 4, "hp": 12}],
+    "D": [{"name": "Серебряный медальон 🥈", "str": 7, "def": 5, "hp": 20}, {"name": "Коралловый браслет 🪸", "str": 6, "def": 6, "hp": 18}],
+    "C": [{"name": "Жемчужина силы ⚪", "str": 12, "def": 8, "hp": 30}, {"name": "Акулий талисман 🦈", "str": 10, "def": 10, "hp": 25}],
+    "B": [{"name": "Кристалл глубин 💎", "str": 18, "def": 12, "hp": 50}, {"name": "Раковина Левиафана 🐚", "str": 15, "def": 15, "hp": 45}],
+    "A": [{"name": "Сердце океана 💙", "str": 28, "def": 18, "hp": 80}, {"name": "Корона Морского Царя 👑", "str": 25, "def": 20, "hp": 75}],
+    "S": [{"name": "Слеза Посейдона 💧", "str": 45, "def": 30, "hp": 150}, {"name": "Трезубец Бездны 🔱", "str": 50, "def": 25, "hp": 120}],
 }
 
 CHEST_WEAPONS = {
-    "F": [{"name":"Ржавый нож 🗡️","str":4},{"name":"Деревянный меч 🪵","str":5}],
-    "E": [{"name":"Каменный топор 🪓","str":7},{"name":"Костяной клинок 🦴","str":8}],
-    "D": [{"name":"Коралловый меч 🪸","str":11},{"name":"Осколочный клинок 💎","str":12}],
-    "C": [{"name":"Ледяной клинок ❄️","str":16},{"name":"Огненный меч 🔥","str":18}],
-    "B": [{"name":"Молниевый клинок ⚡","str":22},{"name":"Призрачный меч 👻","str":25}],
-    "A": [{"name":"Клинок дракона 🐉","str":32},{"name":"Буревой топор 🌪️","str":35}],
-    "S": [{"name":"Меч Богов ⚔️","str":50},{"name":"Клинок Бездны 🌑","str":55}],
+    "F": [{"name": "Ржавый нож 🗡️", "str": 4}, {"name": "Деревянный меч 🪵", "str": 5}],
+    "E": [{"name": "Каменный топор 🪓", "str": 7}, {"name": "Костяной клинок 🦴", "str": 8}],
+    "D": [{"name": "Коралловый меч 🪸", "str": 11}, {"name": "Осколочный клинок 💎", "str": 12}],
+    "C": [{"name": "Ледяной клинок ❄️", "str": 16}, {"name": "Огненный меч 🔥", "str": 18}],
+    "B": [{"name": "Молниевый клинок ⚡", "str": 22}, {"name": "Призрачный меч 👻", "str": 25}],
+    "A": [{"name": "Клинок дракона 🐉", "str": 32}, {"name": "Буревой топор 🌪️", "str": 35}],
+    "S": [{"name": "Меч Богов ⚔️", "str": 50}, {"name": "Клинок Бездны 🌑", "str": 55}],
 }
 
 CHEST_ARMOR = {
-    "F": [{"name":"Тряпьё 🧣","def":3,"hp":5},{"name":"Кожаная броня 👕","def":4,"hp":8}],
-    "E": [{"name":"Медная броня 🟤","def":6,"hp":15},{"name":"Костяная броня 🦴","def":7,"hp":12}],
-    "D": [{"name":"Коралловая броня 🪸","def":10,"hp":25},{"name":"Акулья чешуя 🦈","def":12,"hp":20}],
-    "C": [{"name":"Ледяная броня ❄️","def":15,"hp":40},{"name":"Огненная броня 🔥","def":14,"hp":45}],
-    "B": [{"name":"Молниевая броня ⚡","def":20,"hp":60},{"name":"Призрачная броня 👻","def":22,"hp":55}],
-    "A": [{"name":"Драконья броня 🐉","def":30,"hp":100},{"name":"Буревая броня 🌪️","def":28,"hp":110}],
-    "S": [{"name":"Броня Богов 🛡️","def":45,"hp":200},{"name":"Броня Бездны 🌑","def":50,"hp":180}],
+    "F": [{"name": "Тряпьё 🧣", "def": 3, "hp": 5}, {"name": "Кожаная броня 👕", "def": 4, "hp": 8}],
+    "E": [{"name": "Медная броня 🟤", "def": 6, "hp": 15}, {"name": "Костяная броня 🦴", "def": 7, "hp": 12}],
+    "D": [{"name": "Коралловая броня 🪸", "def": 10, "hp": 25}, {"name": "Акулья чешуя 🦈", "def": 12, "hp": 20}],
+    "C": [{"name": "Ледяная броня ❄️", "def": 15, "hp": 40}, {"name": "Огненная броня 🔥", "def": 14, "hp": 45}],
+    "B": [{"name": "Молниевая броня ⚡", "def": 20, "hp": 60}, {"name": "Призрачная броня 👻", "def": 22, "hp": 55}],
+    "A": [{"name": "Драконья броня 🐉", "def": 30, "hp": 100}, {"name": "Буревая броня 🌪️", "def": 28, "hp": 110}],
+    "S": [{"name": "Броня Богов 🛡️", "def": 45, "hp": 200}, {"name": "Броня Бездны 🌑", "def": 50, "hp": 180}],
 }
 
 CHEST_CONTENTS = {
@@ -314,7 +328,7 @@ RESOURCE_SELL_PRICES = {
     "Коралл 🪸": 15, "Ледяной кристалл 🧊": 20, "Огненный камень 🔥": 20,
     "Грозовой камень ⚡": 30, "Кристальный осколок 💎": 35, "Призрачная эссенция 👻": 35,
     "Драконья чешуя 🐉": 60, "Кровь кракена 🩸": 50, "Тёмная эссенция 🌑": 55,
-    "Слеза Посейдона 💧": 120,"Карта сокровищ 🗺️": 40,
+    "Слеза Посейдона 💧": 120, "Карта сокровищ 🗺️": 40,
 }
 
 POTION_SELL_PRICES = {
@@ -339,28 +353,31 @@ DUNGEON_FLOORS_CONFIG = [
 ]
 DUNGEON_TOTAL_FLOORS = 10
 
+# ИСПРАВЛЕНО: корректная сборка ITEM_TYPES с правильным regex
 ITEM_TYPES = {}
-for _n, _i in SHOP_ITEMS.items(): ITEM_TYPES[_n] = _i["type"]
+for _n, _i in SHOP_ITEMS.items():
+    ITEM_TYPES[_n] = _i["type"]
 for _r in CRAFT_RECIPES:
-    ITEM_TYPES[_r["name"]] = _r["type"]
-    if "effect" in _r: ITEM_TYPES[_r["name"]] = "potion"
+    ITEM_TYPES[_r["name"]] = "potion" if "effect" in _r else _r["type"]
 for _r in "FEDCBAS":
     ITEM_TYPES[f"Сундук [{_r}] 📦"] = "chest"
     for _a in ARTIFACTS.get(_r, []):
         _fn = f"{_a['name']} [{_r}]"
-        ITEM_BONUSES[_fn] = {"str": _a.get("str",0), "def": _a.get("def",0), "hp": _a.get("hp",0)}
+        ITEM_BONUSES[_fn] = {"str": _a.get("str", 0), "def": _a.get("def", 0), "hp": _a.get("hp", 0)}
         ITEM_TYPES[_fn] = "artifact"
     for _w in CHEST_WEAPONS.get(_r, []):
         _fn = f"{_w['name']} [{_r}]"
-        ITEM_BONUSES[_fn] = {"str": _w.get("str",0)}
+        ITEM_BONUSES[_fn] = {"str": _w.get("str", 0)}
         ITEM_TYPES[_fn] = "weapon"
     for _a in CHEST_ARMOR.get(_r, []):
         _fn = f"{_a['name']} [{_r}]"
-        ITEM_BONUSES[_fn] = {"def": _a.get("def",0), "hp": _a.get("hp",0)}
+        ITEM_BONUSES[_fn] = {"def": _a.get("def", 0), "hp": _a.get("hp", 0)}
         ITEM_TYPES[_fn] = "armor"
 ITEM_TYPES.update({"Компас мудреца 🧭": "accessory", "Амулет глубин 🌊": "accessory", "Корона чемпиона 👑": "accessory"})
-for _p in POTION_SELL_PRICES: ITEM_TYPES[_p] = "potion"
+for _p in POTION_SELL_PRICES:
+    ITEM_TYPES[_p] = "potion"
 ITEM_TYPES["Карта сокровищ 🗺️"] = "treasure"
+
 SEAL_SKILLS_POOL = [
     {"name": "Критический удар ⚡", "effect": "crit_15", "desc": "15% шанс двойного урона"},
     {"name": "Толстая кожа 🛡️", "effect": "dmg_reduce_10", "desc": "-10% получаемого урона"},
@@ -478,7 +495,6 @@ TALENTS = {
     "summoner": {"name": "Призыватель 🐾", "desc": "+15 урона от союзника каждый ход"},
     "healer": {"name": "Хиллер 💚", "desc": "Лечит 20% макс HP раз за бой; вне боя 25 HP (кд 15м)"},
 }
-
 # ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 def _safe_int(value, default=0):
     if value is None: return default
@@ -494,75 +510,84 @@ def reg_step(chat_id, user_id, handler, *args):
     bot.register_next_step_handler_by_chat_id(chat_id, wrapper)
 
 def get_player(uid):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT * FROM players WHERE user_id=?", (uid,)); r = c.fetchone(); conn.close(); return r
+    c = get_conn().cursor()
+    c.execute("SELECT * FROM players WHERE user_id=?", (uid,))
+    return c.fetchone()
 
 def get_seal(sid):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT * FROM seals WHERE seal_id=?", (sid,)); r = c.fetchone(); conn.close()
+    c = get_conn().cursor()
+    c.execute("SELECT * FROM seals WHERE seal_id=?", (sid,))
+    r = c.fetchone()
     if r: check_baby_growth(sid)
     return r
 
 def get_player_seals(uid):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT * FROM seals WHERE owner_id=?", (uid,)); r = c.fetchall(); conn.close(); return r
+    c = get_conn().cursor()
+    c.execute("SELECT * FROM seals WHERE owner_id=?", (uid,))
+    return c.fetchall()
 
 def get_seal_count(uid):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT COUNT(*) FROM seals WHERE owner_id=?", (uid,)); r = c.fetchone(); conn.close()
+    c = get_conn().cursor()
+    c.execute("SELECT COUNT(*) FROM seals WHERE owner_id=?", (uid,))
+    r = c.fetchone()
     return _safe_int(r[0]) if r else 0
 
 def update_seal(sid, **kw):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_conn(); c = conn.cursor()
     s = ", ".join([f"{k}=?" for k in kw]); v = list(kw.values()) + [sid]
-    c.execute(f"UPDATE seals SET {s} WHERE seal_id=?", v); conn.commit(); conn.close()
+    c.execute(f"UPDATE seals SET {s} WHERE seal_id=?", v); conn.commit()
 
 def update_player(uid, **kw):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_conn(); c = conn.cursor()
     s = ", ".join([f"{k}=?" for k in kw]); v = list(kw.values()) + [uid]
-    c.execute(f"UPDATE players SET {s} WHERE user_id=?", v); conn.commit(); conn.close()
+    c.execute(f"UPDATE players SET {s} WHERE user_id=?", v); conn.commit()
 
 def add_fishnets(uid, amt):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_conn(); c = conn.cursor()
     c.execute("UPDATE players SET fishnets = COALESCE(fishnets, 0) + ? WHERE user_id=?", (amt, uid))
-    conn.commit(); conn.close()
+    conn.commit()
 
 def get_fishnets(uid):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT fishnets FROM players WHERE user_id=?", (uid,)); r = c.fetchone(); conn.close()
+    c = get_conn().cursor()
+    c.execute("SELECT fishnets FROM players WHERE user_id=?", (uid,))
+    r = c.fetchone()
     return _safe_int(r[0]) if r else 0
 
 def add_to_inv(uid, name, t, q=1):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT inv_id, quantity FROM inventory WHERE user_id=? AND item_name=?", (uid, name)); r = c.fetchone()
+    conn = get_conn(); c = conn.cursor()
+    c.execute("SELECT inv_id, quantity FROM inventory WHERE user_id=? AND item_name=?", (uid, name))
+    r = c.fetchone()
     if r: c.execute("UPDATE inventory SET quantity = quantity + ? WHERE inv_id=?", (q, r[0]))
     else: c.execute("INSERT INTO inventory (user_id, item_name, item_type, quantity) VALUES (?, ?, ?, ?)", (uid, name, t, q))
-    conn.commit(); conn.close()
+    conn.commit()
 
 def get_inv(uid):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT * FROM inventory WHERE user_id=? AND quantity > 0", (uid,)); r = c.fetchall(); conn.close(); return r
+    c = get_conn().cursor()
+    c.execute("SELECT * FROM inventory WHERE user_id=? AND quantity > 0", (uid,))
+    return c.fetchall()
 
 def get_item_qty(uid, name):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT quantity FROM inventory WHERE user_id=? AND item_name=?", (uid, name)); r = c.fetchone(); conn.close()
+    c = get_conn().cursor()
+    c.execute("SELECT quantity FROM inventory WHERE user_id=? AND item_name=?", (uid, name))
+    r = c.fetchone()
     return _safe_int(r[0]) if r else 0
 
 def remove_from_inv(uid, name, q=1):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT inv_id, quantity FROM inventory WHERE user_id=? AND item_name=?", (uid, name)); r = c.fetchone()
+    conn = get_conn(); c = conn.cursor()
+    c.execute("SELECT inv_id, quantity FROM inventory WHERE user_id=? AND item_name=?", (uid, name))
+    r = c.fetchone()
     if r:
         nq = r[1] - q
         if nq <= 0: c.execute("DELETE FROM inventory WHERE inv_id=?", (r[0],))
         else: c.execute("UPDATE inventory SET quantity=? WHERE inv_id=?", (nq, r[0]))
         conn.commit()
-    conn.close()
 
+# ИСПРАВЛЕНО: regex для редкости сэкранирован правильно
 def get_sell_price(item_name):
     if item_name in SHOP_ITEMS: return int(SHOP_ITEMS[item_name]["price"] * 0.5)
     if item_name in RESOURCE_SELL_PRICES: return RESOURCE_SELL_PRICES[item_name]
     if item_name in POTION_SELL_PRICES: return POTION_SELL_PRICES[item_name]
-    m = re.search(r'$$([A-Z])$$', item_name)  # ИСПРАВЛЕНО: была r'$$([A-Z])$$'
+    m = re.search(r'$$([A-Z])$$', item_name)
     if m and m.group(1) in RARITY_SELL_PRICES:
         return RARITY_SELL_PRICES[m.group(1)]
     for recipe in CRAFT_RECIPES:
@@ -575,59 +600,68 @@ def exp_for_level(lvl):
     return lvl * 100 + (lvl - 1) * 50
 
 def get_exp_mult():
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c = get_conn().cursor()
     now = datetime.now().isoformat()
-    c.execute("SELECT effect FROM active_events WHERE active=1 AND event_type='exp_boost' AND expires_at > ?", (now,)); r = c.fetchone(); conn.close()
+    c.execute("SELECT effect FROM active_events WHERE active=1 AND event_type='exp_boost' AND expires_at > ?", (now,))
+    r = c.fetchone()
     if r:
         try: return float(r[0])
         except ValueError: return 1.0
     return 1.0
 
 def get_shop_disc():
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c = get_conn().cursor()
     now = datetime.now().isoformat()
-    c.execute("SELECT effect FROM active_events WHERE active=1 AND event_type='shop_discount' AND expires_at > ?", (now,)); r = c.fetchone(); conn.close()
+    c.execute("SELECT effect FROM active_events WHERE active=1 AND event_type='shop_discount' AND expires_at > ?", (now,))
+    r = c.fetchone()
     if r:
         try: return float(r[0])
         except ValueError: return 0.0
     return 0.0
 
 def get_fish_bonus():
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c = get_conn().cursor()
     now = datetime.now().isoformat()
-    c.execute("SELECT effect FROM active_events WHERE active=1 AND event_type='fishing_bonus' AND expires_at > ?", (now,)); r = c.fetchone(); conn.close()
+    c.execute("SELECT effect FROM active_events WHERE active=1 AND event_type='fishing_bonus' AND expires_at > ?", (now,))
+    r = c.fetchone()
     if r:
         try: return float(r[0])
         except ValueError: return 1.0
     return 1.0
 
 def get_seal_skills(sid):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT skill_name, skill_effect FROM seal_skills WHERE seal_id=?", (sid,)); r = c.fetchall(); conn.close()
-    return [{"name": row[0], "effect": row[1]} for row in r]
+    c = get_conn().cursor()
+    c.execute("SELECT skill_name, skill_effect FROM seal_skills WHERE seal_id=?", (sid,))
+    return [{"name": row[0], "effect": row[1]} for row in c.fetchall()]
 
 def uid_owner(sid):
-    seal = get_seal(sid); return seal[1] if seal else 0
+    seal = get_seal(sid)
+    return seal[1] if seal else 0
 
+# ИСПРАВЛЕНО: check_levelup — одна транзакция, без цикла подключений
 def check_levelup(sid):
+    conn = get_conn(); c = conn.cursor()
     results = []
     while True:
-        seal = get_seal(sid)
-        if not seal or len(seal) < 11: break
-        lvl = _safe_int(seal[9]); exp = _safe_int(seal[10]); needed = exp_for_level(lvl)
-        if exp >= needed:
-            nl = lvl + 1; ne = exp - needed
-            hp_inc = random.randint(10, 20); new_max_hp = seal[4] + hp_inc
-            update_seal(sid, level=nl, exp=ne, strength=seal[7]+random.randint(2,5), defense=seal[8]+random.randint(1,3), max_health=new_max_hp, health=new_max_hp)
-            results.append(nl)
-            if nl % 5 == 0:
-                skill = random.choice(SEAL_SKILLS_POOL)
-                conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-                c.execute("INSERT INTO seal_skills (seal_id, skill_name, skill_effect, acquired_at) VALUES (?, ?, ?, ?)", (sid, skill["name"], skill["effect"], datetime.now().isoformat()))
-                conn.commit(); conn.close()
-            uid = uid_owner(sid)
-            if uid: update_quest_chain(uid, "reach_level", nl)
-        else: break
+        c.execute("SELECT level, exp, strength, defense, max_health, health FROM seals WHERE seal_id=?", (sid,))
+        row = c.fetchone()
+        if not row: break
+        lvl, exp, str_v, def_v, mhp, hp = row
+        needed = exp_for_level(lvl)
+        if exp < needed: break
+        nl = lvl + 1; ne = exp - needed
+        hp_inc = random.randint(10, 20); new_max_hp = mhp + hp_inc
+        c.execute("UPDATE seals SET level=?, exp=?, strength=?, defense=?, max_health=?, health=? WHERE seal_id=?",
+                  (nl, ne, str_v + random.randint(2, 5), def_v + random.randint(1, 3), new_max_hp, new_max_hp, sid))
+        conn.commit()
+        results.append(nl)
+        if nl % 5 == 0:
+            skill = random.choice(SEAL_SKILLS_POOL)
+            c.execute("INSERT INTO seal_skills (seal_id, skill_name, skill_effect, acquired_at) VALUES (?, ?, ?, ?)",
+                      (sid, skill["name"], skill["effect"], datetime.now().isoformat()))
+            conn.commit()
+        uid = uid_owner(sid)
+        if uid: update_quest_chain(uid, "reach_level", nl)
     return results[-1] if results else False
 
 def get_potion_info(potion_name):
@@ -649,7 +683,7 @@ def apply_potion_to_seal(sid, potion_name):
         return f"💚 +{val} HP! ({seal[3]}→{nh})"
     elif eff == "antidote":
         update_seal(sid, mood=min(100, seal[5] + 10))
-        return f"💊 Отравление снято!"
+        return "💊 Отравление снято!"
     else:
         dur = info.get("duration", 3)
         update_seal(sid, active_potion=f"{eff}:{val}:{dur}", potion_uses=dur)
@@ -683,8 +717,9 @@ def decrement_potion_use(sid):
         update_seal(sid, potion_uses=uses - 1)
 
 def get_enchantment_for_item(uid, item_name):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT enchantment FROM item_enchantments WHERE user_id=? AND item_name=?", (uid, item_name)); r = c.fetchone(); conn.close()
+    c = get_conn().cursor()
+    c.execute("SELECT enchantment FROM item_enchantments WHERE user_id=? AND item_name=?", (uid, item_name))
+    r = c.fetchone()
     return r[0] if r else None
 
 def can_enchant(uid, ench_name):
@@ -698,13 +733,15 @@ def do_enchant_item(uid, item_name, ench_name):
     if get_item_qty(uid, item_name) <= 0: return "Нет предмета!"
     if not can_enchant(uid, ench_name): return "Не хватает ресурсов!"
     for res, amt in ench["cost"].items(): remove_from_inv(uid, res, amt)
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT ench_id FROM item_enchantments WHERE user_id=? AND item_name=?", (uid, item_name)); ex = c.fetchone()
+    conn = get_conn(); c = conn.cursor()
+    c.execute("SELECT ench_id FROM item_enchantments WHERE user_id=? AND item_name=?", (uid, item_name))
+    ex = c.fetchone()
     if ex:
         c.execute("UPDATE item_enchantments SET enchantment=? WHERE ench_id=?", (ench_name, ex[0]))
     else:
-        c.execute("INSERT INTO item_enchantments (user_id,item_name,enchantment,created_at) VALUES (?,?,?,?)", (uid, item_name, ench_name, datetime.now().isoformat()))
-    conn.commit(); conn.close()
+        c.execute("INSERT INTO item_enchantments (user_id, item_name, enchantment, created_at) VALUES (?, ?, ?, ?)",
+                   (uid, item_name, ench_name, datetime.now().isoformat()))
+    conn.commit()
     return f"✨ {item_name} зачарован: {ench_name}!"
 
 def get_enchanted_stats(uid, item_name):
@@ -713,18 +750,19 @@ def get_enchanted_stats(uid, item_name):
     ench = ENCHANTMENTS.get(ench_name, {})
     return ench.get("bonus_str", 0), ench.get("bonus_def", 0)
 
+# ИСПРАВЛЕНО: get_effective_stats — используем seal[1] вместо лишнего вызова uid_owner
 def get_effective_stats(sid):
     seal = get_seal(sid)
     if not seal: return 0, 0, 0
     base_str = _safe_int(seal[7]); base_def = _safe_int(seal[8]); base_hp = _safe_int(seal[4])
-    uid = uid_owner(sid)
+    uid = seal[1]
     slots = [seal[13], seal[14], seal[15], seal[16], seal[17]]
     if len(seal) > 22 and seal[22]: slots.append(seal[22])
     bs = bd = bh = 0
     for item_name in slots:
         if not item_name: continue
         if item_name in ITEM_BONUSES:
-            b = ITEM_BONUSES[item_name]; bs += _safe_int(b.get("str",0)); bd += _safe_int(b.get("def",0)); bh += _safe_int(b.get("hp",0))
+            b = ITEM_BONUSES[item_name]; bs += _safe_int(b.get("str", 0)); bd += _safe_int(b.get("def", 0)); bh += _safe_int(b.get("hp", 0))
         if uid:
             es, ed = get_enchanted_stats(uid, item_name)
             bs += es; bd += ed
@@ -738,7 +776,8 @@ def get_mood_bonus(sid):
     acc = seal[17]
     return _safe_int(ACCESSORY_BONUSES.get(acc, 0)) if acc else 0
 
-def can_craft(uid, recipe): return all(get_item_qty(uid, r) >= a for r, a in recipe["resources"].items())
+def can_craft(uid, recipe):
+    return all(get_item_qty(uid, r) >= a for r, a in recipe["resources"].items())
 
 def get_craft_tier_label(recipe):
     tier = recipe.get("tier", "common")
@@ -776,14 +815,14 @@ def process_drops(uid, drops):
     return d
 
 def get_married_ids():
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c = get_conn().cursor()
     c.execute("SELECT seal1_id FROM marriages UNION SELECT seal2_id FROM marriages")
-    ids = set(r[0] for r in c.fetchall()); conn.close(); return ids
+    return set(r[0] for r in c.fetchall())
 
 def get_marriage_info(sid):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c = get_conn().cursor()
     c.execute("SELECT seal1_id, seal2_id FROM marriages WHERE seal1_id=? OR seal2_id=?", (sid, sid))
-    r = c.fetchone(); conn.close()
+    r = c.fetchone()
     if not r: return None
     partner_id = r[1] if r[0] == sid else r[0]
     partner = get_seal(partner_id)
@@ -807,7 +846,7 @@ def get_seal_status(seal, married):
     return "🦭"
 
 def check_baby_growth(sid):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_conn(); c = conn.cursor()
     c.execute("SELECT is_baby, born_at FROM seals WHERE seal_id=?", (sid,))
     r = c.fetchone()
     if r and r[0] == 1 and r[1]:
@@ -817,12 +856,12 @@ def check_baby_growth(sid):
                 c.execute("UPDATE seals SET is_baby=0, strength=strength+5, defense=defense+3, max_health=max_health+20, health=max_health+20 WHERE seal_id=?", (sid,))
                 conn.commit()
         except: pass
-    conn.close()
 
 def get_active_event_text():
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c = get_conn().cursor()
     now = datetime.now().isoformat()
-    c.execute("SELECT event_type FROM active_events WHERE active=1 AND expires_at > ?", (now,)); r = c.fetchone(); conn.close()
+    c.execute("SELECT event_type FROM active_events WHERE active=1 AND expires_at > ?", (now,))
+    r = c.fetchone()
     if not r: return None
     for ev in DAILY_EVENTS:
         if ev["event_type"] == r[0]: return ev["desc"]
@@ -834,8 +873,9 @@ def get_todays_event():
 
 def check_vote_result():
     today = date.today().isoformat()
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT vote, COUNT(*) FROM votes WHERE date=? GROUP BY vote", (today,)); rows = c.fetchall(); conn.close()
+    c = get_conn().cursor()
+    c.execute("SELECT vote, COUNT(*) FROM votes WHERE date=? GROUP BY vote", (today,))
+    rows = c.fetchall()
     y = n = 0
     for v, cnt in rows:
         if v == "yes": y = cnt
@@ -844,25 +884,28 @@ def check_vote_result():
 
 def activate_event(et, eff):
     exp = datetime.now() + timedelta(hours=24)
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_conn(); c = conn.cursor()
     c.execute("UPDATE active_events SET active=0 WHERE active=1")
     c.execute("INSERT INTO active_events (event_type, effect, expires_at, active) VALUES (?, ?, ?, 1)", (et, eff, exp.isoformat()))
-    conn.commit(); conn.close()
+    conn.commit()
 
 def get_quest_chains():
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT * FROM quest_chains"); r = c.fetchall(); conn.close(); return r
+    c = get_conn().cursor()
+    c.execute("SELECT * FROM quest_chains")
+    return c.fetchall()
 
 def get_player_chain(uid, chain_id):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT * FROM player_quest_chains WHERE user_id=? AND chain_id=?", (uid, chain_id)); r = c.fetchone(); conn.close(); return r
+    c = get_conn().cursor()
+    c.execute("SELECT * FROM player_quest_chains WHERE user_id=? AND chain_id=?", (uid, chain_id))
+    return c.fetchone()
 
 def update_quest_chain(uid, step_type, amount=1):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_conn(); c = conn.cursor()
     c.execute("SELECT id, chain_id, current_step, step_progress, completed FROM player_quest_chains WHERE user_id=? AND completed=0", (uid,))
     for pc_id, cid, cs, sp, comp in c.fetchall():
         c2 = conn.cursor()
-        c2.execute("SELECT steps_json FROM quest_chains WHERE chain_id=?", (cid,)); chain = c2.fetchone()
+        c2.execute("SELECT steps_json FROM quest_chains WHERE chain_id=?", (cid,))
+        chain = c2.fetchone()
         if not chain: continue
         try: steps = json.loads(chain[0])
         except json.JSONDecodeError: continue
@@ -876,15 +919,17 @@ def update_quest_chain(uid, step_type, amount=1):
                 if cs2 >= len(steps): c2.execute("UPDATE player_quest_chains SET completed=1 WHERE id=?", (pc_id,))
                 else: c2.execute("UPDATE player_quest_chains SET current_step=?, step_progress=0 WHERE id=?", (cs2, pc_id))
             else: c2.execute("UPDATE player_quest_chains SET step_progress=? WHERE id=?", (ns, pc_id))
-    conn.commit(); conn.close()
+    conn.commit()
 
 def get_clan_by_user(uid):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT clans.* FROM clans JOIN clan_members ON clans.clan_id=clan_members.clan_id WHERE clan_members.user_id=?", (uid,)); r = c.fetchone(); conn.close(); return r
+    c = get_conn().cursor()
+    c.execute("SELECT clans.* FROM clans JOIN clan_members ON clans.clan_id=clan_members.clan_id WHERE clan_members.user_id=?", (uid,))
+    return c.fetchone()
 
 def get_clan_members(cid):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT user_id FROM clan_members WHERE clan_id=?", (cid,)); r = c.fetchall(); conn.close(); return [row[0] for row in r]
+    c = get_conn().cursor()
+    c.execute("SELECT user_id FROM clan_members WHERE clan_id=?", (cid,))
+    return [row[0] for row in c.fetchall()]
 
 def trigger_encounter(uid):
     enc = random.choice(RANDOM_ENCOUNTERS)
@@ -913,40 +958,42 @@ def trigger_encounter(uid):
     return msg
 
 def create_duel(cid, oid, csid):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("INSERT INTO duels (challenger_id, opponent_id, challenger_seal_id, status, created_at) VALUES (?, ?, ?, 'pending', ?)", (cid, oid, csid, datetime.now().isoformat()))
-    conn.commit(); did = c.lastrowid; conn.close(); return did
+    conn = get_conn(); c = conn.cursor()
+    c.execute("INSERT INTO duels (challenger_id, opponent_id, challenger_seal_id, status, created_at) VALUES (?, ?, ?, 'pending', ?)",
+              (cid, oid, csid, datetime.now().isoformat()))
+    conn.commit(); return c.lastrowid
 
 def get_duel(did):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT * FROM duels WHERE duel_id=?", (did,)); r = c.fetchone(); conn.close(); return r
+    c = get_conn().cursor()
+    c.execute("SELECT * FROM duels WHERE duel_id=?", (did,))
+    return c.fetchone()
 
 def generate_daily_quests(uid):
     today = date.today().isoformat()
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_conn(); c = conn.cursor()
     c.execute("SELECT * FROM daily_quests WHERE user_id=? AND date=?", (uid, today))
-    if c.fetchall(): conn.close(); return
+    if c.fetchall(): return
     c.execute("DELETE FROM daily_quests WHERE user_id=? AND date!=?", (uid, today))
     for q in random.sample(QUEST_TEMPLATES, 3):
-        exp_r = q.get("exp", 0)
-        food_r = q.get("food", None)
-        c.execute("INSERT INTO daily_quests (user_id,quest_type,quest_target,quest_progress,quest_reward,date,claimed,exp_reward,food_reward) VALUES (?,?,?,0,?,?,0,?,?)",
+        exp_r = q.get("exp", 0); food_r = q.get("food", None)
+        c.execute("INSERT INTO daily_quests (user_id, quest_type, quest_target, quest_progress, quest_reward, date, claimed, exp_reward, food_reward) VALUES (?,?,?,0,?,?,0,?,?)",
                   (uid, q["type"], q["target"], q["reward"], today, exp_r, food_r))
-    conn.commit(); conn.close()
+    conn.commit()
 
 def update_quest_progress(uid, qt, amt=1):
     generate_daily_quests(uid)
     today = date.today().isoformat()
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT quest_id,quest_progress,quest_target FROM daily_quests WHERE user_id=? AND quest_type=? AND date=? AND claimed=0", (uid, qt, today))
+    conn = get_conn(); c = conn.cursor()
+    c.execute("SELECT quest_id, quest_progress, quest_target FROM daily_quests WHERE user_id=? AND quest_type=? AND date=? AND claimed=0", (uid, qt, today))
     for qid, prog, targ in c.fetchall():
         if prog < targ: c.execute("UPDATE daily_quests SET quest_progress=? WHERE quest_id=?", (min(targ, prog + amt), qid))
-    conn.commit(); conn.close()
+    conn.commit()
 
 def get_daily_quests(uid):
     today = date.today().isoformat()
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT * FROM daily_quests WHERE user_id=? AND date=?", (uid, today)); r = c.fetchall(); conn.close(); return r
+    c = get_conn().cursor()
+    c.execute("SELECT * FROM daily_quests WHERE user_id=? AND date=?", (uid, today))
+    return c.fetchall()
 
 def get_chest_contents(rarity):
     if rarity in CHEST_CONTENTS:
@@ -985,14 +1032,15 @@ def open_chest(uid, rarity):
     return msg
 # ==================== ТАЛАНТЫ ====================
 def get_seal_talent(sid):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT talent FROM seal_talents WHERE seal_id=?", (sid,)); r = c.fetchone(); conn.close()
+    c = get_conn().cursor()
+    c.execute("SELECT talent FROM seal_talents WHERE seal_id=?", (sid,))
+    r = c.fetchone()
     return r[0] if r else None
 
 def set_seal_talent(sid, talent):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_conn(); c = conn.cursor()
     c.execute("INSERT OR REPLACE INTO seal_talents (seal_id, talent) VALUES (?, ?)", (sid, talent))
-    conn.commit(); conn.close()
+    conn.commit()
 
 def talent_on_attack(sid, dmg, talent):
     if talent == "mage": return int(dmg * 0.3)
@@ -1026,24 +1074,27 @@ def healer_ooc_heal(sid):
     nh = min(eh, seal[3] + 25); healed = nh - seal[3]
     update_seal(sid, health=nh, healer_cd=datetime.now().isoformat())
     return f"💚 +{healed} HP!"
+
 # ==================== ЛОТЕРЕЯ ====================
 def buy_lottery_ticket(uid):
     if get_fishnets(uid) < LOTTERY_TICKET_PRICE: return False, "Не хватает 🐟!"
     add_fishnets(uid, -LOTTERY_TICKET_PRICE)
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_conn(); c = conn.cursor()
     c.execute("INSERT INTO lottery_tickets (user_id, ticket_date) VALUES (?, ?)", (uid, date.today().isoformat()))
-    conn.commit(); conn.close()
+    conn.commit()
     return True, "Билет куплен!"
 
 def get_lottery_tickets_count(uid):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c = get_conn().cursor()
     c.execute("SELECT COUNT(*) FROM lottery_tickets WHERE user_id=? AND ticket_date=?", (uid, date.today().isoformat()))
-    r = c.fetchone(); conn.close(); return r[0] if r else 0
+    r = c.fetchone()
+    return r[0] if r else 0
 
 def get_total_tickets_today():
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c = get_conn().cursor()
     c.execute("SELECT COUNT(*) FROM lottery_tickets WHERE ticket_date=?", (date.today().isoformat(),))
-    r = c.fetchone(); conn.close(); return r[0] if r else 0
+    r = c.fetchone()
+    return r[0] if r else 0
 
 def lottery_draw_thread():
     while True:
@@ -1051,7 +1102,8 @@ def lottery_draw_thread():
         now = datetime.now()
         if now.hour == 21 and now.minute == 0:
             today = date.today().isoformat()
-            conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+            conn = sqlite3.connect(DB_PATH, timeout=30)
+            c = conn.cursor()
             c.execute("SELECT * FROM lottery_results WHERE draw_date=?", (today,))
             if c.fetchone(): conn.close(); time.sleep(3600); continue
             c.execute("SELECT user_id, COUNT(*) FROM lottery_tickets WHERE ticket_date=? GROUP BY user_id", (today,))
@@ -1061,7 +1113,7 @@ def lottery_draw_thread():
             weighted = []
             for uid, cnt in participants: weighted.extend([uid] * cnt)
             winner = random.choice(weighted)
-            add_fishnets(winner, total_pool)
+            c.execute("UPDATE players SET fishnets = COALESCE(fishnets, 0) + ? WHERE user_id=?", (total_pool, winner))
             c.execute("INSERT INTO lottery_results (draw_date, winner_id, prize) VALUES (?, ?, ?)", (today, winner, total_pool))
             conn.commit(); conn.close()
             try: bot.send_message(winner, f"🎰 *Лотерея!*\n\nВы выиграли 🐟{total_pool}!", parse_mode='Markdown')
@@ -1075,26 +1127,26 @@ def treasure_start_exp(uid, sid):
     if seal[3] <= 10: return "HP слишком мало!"
     if get_item_qty(uid, "Карта сокровищ 🗺️") <= 0: return "Нет карт!"
     remove_from_inv(uid, "Карта сокровищ 🗺️")
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_conn(); c = conn.cursor()
     c.execute("DELETE FROM treasure_runs WHERE user_id=?", (uid,))
     c.execute("INSERT INTO treasure_runs (user_id, seal_id, current_step, active) VALUES (?, ?, 0, 1)", (uid, sid))
-    conn.commit(); conn.close()
+    conn.commit()
     return None
 
 def treasure_get_step_text(uid, sid):
     seal = get_seal(sid)
     if not seal: return None, None
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c = get_conn().cursor()
     c.execute("SELECT current_step FROM treasure_runs WHERE user_id=? AND active=1", (uid,))
-    r = c.fetchone(); conn.close()
+    r = c.fetchone()
     if not r: return None, None
     step = r[0]
     if step >= TREASURE_TOTAL_STEPS:
         bonus_fn = random.randint(30, 60); add_fishnets(uid, bonus_fn)
         add_to_inv(uid, "Сундук [A] 📦", "chest", 1)
-        conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+        conn = get_conn(); c = conn.cursor()
         c.execute("UPDATE treasure_runs SET active=0 WHERE user_id=?", (uid,))
-        conn.commit(); conn.close()
+        conn.commit()
         return f"🏆 *Экспедиция завершена!*\n\n🎁 Бонус: 🐟{bonus_fn}\n📦 Сундук [A] 📦", None
     t = f"🗺️ *Экспедиция — Шаг {step+1}/{TREASURE_TOTAL_STEPS}*\n\n🦭 {seal[2]}: ❤️{seal[3]}/{seal[4]}\n\nВыберите действие:"
     m = types.InlineKeyboardMarkup()
@@ -1105,11 +1157,11 @@ def treasure_get_step_text(uid, sid):
 def treasure_step_do(uid, sid, choice):
     seal = get_seal(sid)
     if not seal: return "Тюлень не найден!"
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c = get_conn().cursor()
     c.execute("SELECT current_step FROM treasure_runs WHERE user_id=? AND active=1", (uid,))
     r = c.fetchone()
-    if not r: conn.close(); return "Нет активной экспедиции!"
-    step = r[0]; conn.close()
+    if not r: return "Нет активной экспедиции!"
+    step = r[0]
     msg = ""
     if choice == "risk":
         if random.random() < 0.6:
@@ -1121,28 +1173,28 @@ def treasure_step_do(uid, sid, choice):
     else:
         fn = random.randint(5, 15); add_fishnets(uid, fn)
         msg = f"🛡️ Осторожно. Найдено 🐟{fn}."
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_conn(); c = conn.cursor()
     c.execute("UPDATE treasure_runs SET current_step=? WHERE user_id=?", (step + 1, uid))
-    conn.commit(); conn.close()
+    conn.commit()
     return msg
 
 # ==================== ПРИВЯЗКА К ТОПИКУ ====================
 def get_topic_binding(chat_id):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT message_thread_id FROM topic_bindings WHERE chat_id=?", (chat_id,)); r = c.fetchone(); conn.close()
+    c = get_conn().cursor()
+    c.execute("SELECT message_thread_id FROM topic_bindings WHERE chat_id=?", (chat_id,))
+    r = c.fetchone()
     return r[0] if r else None
 
 def set_topic_binding(chat_id, thread_id):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_conn(); c = conn.cursor()
     c.execute("INSERT OR REPLACE INTO topic_bindings (chat_id, message_thread_id) VALUES (?, ?)", (chat_id, thread_id))
-    conn.commit(); conn.close()
+    conn.commit()
 
 def remove_topic_binding(chat_id):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_conn(); c = conn.cursor()
     c.execute("DELETE FROM topic_bindings WHERE chat_id=?", (chat_id,))
-    conn.commit(); conn.close()
+    conn.commit()
 
-# --- Monkey-patch: авто-отправка в привязанный топик ---
 _orig_send_message = bot.send_message
 _orig_send_photo = bot.send_photo
 
@@ -1160,9 +1212,8 @@ def _patched_send_photo(chat_id, photo, *args, **kwargs):
 
 bot.send_message = _patched_send_message
 bot.send_photo = _patched_send_photo
-# ==================== ОБРАБОТЧИКИ ====================
 
-# --- Фильтр: в группе с привязкой игнорируем сообщения не из привязанного топика ---
+# ==================== ОБРАБОТЧИКИ ====================
 @bot.message_handler(func=lambda m: _is_not_from_bound_topic(m))
 def _ignore_unbound_topic(message):
     pass
@@ -1180,13 +1231,13 @@ def cmd_start(message):
     chat_id = message.chat.id
     p = get_player(uid)
     if not p:
-        conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-        c.execute("INSERT INTO players (user_id,username,display_name,fishnets) VALUES (?,?,?,100)", (uid, uname, uname))
-        conn.commit(); conn.close()
-        sn = random.choice(["Никифор","Плюха","Шлёпа","Бубль","Тюня","Фрэнк","Сэм"])
-        conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-        c.execute("INSERT INTO seals (owner_id,name,health,max_health,mood,satiety,strength,defense,level,exp) VALUES (?,?,100,100,80,80,10,5,1,0)", (uid, sn))
-        conn.commit(); conn.close()
+        conn = get_conn(); c = conn.cursor()
+        c.execute("INSERT INTO players (user_id, username, display_name, fishnets) VALUES (?, ?, ?, 100)", (uid, uname, uname))
+        conn.commit()
+        sn = random.choice(["Никифор", "Плюха", "Шлёпа", "Бубль", "Тюня", "Фрэнк", "Сэм"])
+        c = conn.cursor()
+        c.execute("INSERT INTO seals (owner_id, name, health, max_health, mood, satiety, strength, defense, level, exp) VALUES (?, ?, 100, 100, 80, 80, 10, 5, 1, 0)", (uid, sn))
+        conn.commit()
         bot.send_message(chat_id, f"Добро пожаловать в Мир Тюленей! 🦭\n\nТюлень {sn} и 100 рыбнеток 🐟 ваши!")
     else:
         bot.send_message(chat_id, "С возвращением! 🦭")
@@ -1228,6 +1279,23 @@ def show_main_menu(chat_id):
     m.add(types.KeyboardButton("🎯 Талант"), types.KeyboardButton("🎰 Лотерея"))
     m.add(types.KeyboardButton("🗺️ Сокровища"))
     bot.send_message(chat_id, "Выберите действие:", reply_markup=m)
+
+# ИСПРАВЛЕНО: добавлены обработчики bindtopic / unbindtopic
+@bot.message_handler(commands=['bindtopic'])
+def cmd_bindtopic(message):
+    chat_id = message.chat.id
+    thread_id = getattr(message, 'message_thread_id', None)
+    if thread_id is None:
+        bot.send_message(chat_id, "Эта команда должна быть выполнена внутри топика (темы).")
+        return
+    set_topic_binding(chat_id, thread_id)
+    bot.send_message(chat_id, f"✅ Бот привязан к топику {thread_id}.")
+
+@bot.message_handler(commands=['unbindtopic'])
+def cmd_unbindtopic(message):
+    chat_id = message.chat.id
+    remove_topic_binding(chat_id)
+    bot.send_message(chat_id, "✅ Привязка к топику снята.")
 
 @bot.message_handler(commands=['profile'])
 @bot.message_handler(func=lambda m: m.text == "👤 Профиль")
@@ -1279,13 +1347,13 @@ def cmd_gallery(message):
 @bot.message_handler(func=lambda m: m.text == "🏆 Лидеры")
 def cmd_leaderboard(message):
     chat_id = message.chat.id
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c = get_conn().cursor()
     c.execute("""SELECT seals.name, seals.level, players.username
                  FROM seals LEFT JOIN players ON seals.owner_id=players.user_id
                  ORDER BY seals.level DESC, seals.exp DESC LIMIT 20""")
-    rows = c.fetchall(); conn.close()
+    rows = c.fetchall()
     if not rows: bot.send_message(chat_id, "Пусто!"); return
-    t = "🏆 *Лидеры*\n\n"; medals = ["🥇","🥈","🥉"]
+    t = "🏆 *Лидеры*\n\n"; medals = ["🥇", "🥈", "🥉"]
     for i, (n, l, u) in enumerate(rows):
         uname = u if u else "?"
         t += f"{medals[i] if i < 3 else str(i+1)+'.'} {n} — ур.{l} (@{uname})\n"
@@ -1298,10 +1366,10 @@ def cmd_inventory(message):
     inv = get_inv(uid)
     if not inv: bot.send_message(chat_id, "Инвентарь пуст!"); return
     t = "🎒 *Инвентарь*\n\n"
-    cats = {"food":"🍴 Еда","medkit":"💊 Медицина","weapon":"⚔️ Оружие","armor":"🛡️ Броня",
-            "helmet":"🪖 Шлемы","shield":"🛡️ Щиты","accessory":"🎀 Аксессуары",
-            "resource":"📦 Ресурсы","artifact":"✨ Артефакты","chest":"📦 Сундуки",
-            "potion":"🧪 Зелья","potion_base":"🧪 Основы"}
+    cats = {"food": "🍴 Еда", "medkit": "💊 Медицина", "weapon": "⚔️ Оружие", "armor": "🛡️ Броня",
+            "helmet": "🪖 Шлемы", "shield": "🛡️ Щиты", "accessory": "🎀 Аксессуары",
+            "resource": "📦 Ресурсы", "artifact": "✨ Артефакты", "chest": "📦 Сундуки",
+            "potion": "🧪 Зелья", "potion_base": "🧪 Основы"}
     grouped = {}
     for item in inv: grouped.setdefault(item[3], []).append(item)
     for cat, label in cats.items():
@@ -1390,8 +1458,8 @@ def inv_back(call):
     inv = get_inv(uid)
     if not inv: bot.send_message(call.message.chat.id, "Пусто!"); return
     t = "🎒 *Инвентарь*\n\n"
-    cats = {"food":"🍴 Еда","medkit":"💊","weapon":"⚔️","armor":"🛡️","helmet":"🪖","shield":"🛡️",
-            "accessory":"🎀","resource":"📦","artifact":"✨","chest":"📦","potion":"🧪","potion_base":"🧪"}
+    cats = {"food": "🍴 Еда", "medkit": "💊", "weapon": "⚔️", "armor": "🛡️", "helmet": "🪖", "shield": "🛡️",
+            "accessory": "🎀", "resource": "📦", "artifact": "✨", "chest": "📦", "potion": "🧪", "potion_base": "🧪"}
     grouped = {}
     for item in inv: grouped.setdefault(item[3], []).append(item)
     for cat, label in cats.items():
@@ -1414,7 +1482,7 @@ def menu_sell(message):
     grouped = {}
     for item in inv: grouped.setdefault(item[3], []).append(item)
     m = types.InlineKeyboardMarkup()
-    for cat in ("resource","weapon","armor","helmet","shield","artifact","chest","food","medkit","accessory","potion","potion_base"):
+    for cat in ("resource", "weapon", "armor", "helmet", "shield", "artifact", "chest", "food", "medkit", "accessory", "potion", "potion_base"):
         items = grouped.get(cat, [])
         for i in items:
             sp = get_sell_price(i[2])
@@ -1448,7 +1516,6 @@ def proc_seal_photo(message, sid):
         with open(p, 'wb') as f: f.write(dl)
         update_seal(sid, photo_path=p); bot.send_message(chat_id, "✅ Фото обновлено!")
     except Exception as e: bot.send_message(chat_id, f"❌ {e}")
-
 @bot.message_handler(func=lambda m: m.text == "🦭 Мой тюлень")
 def menu_seal(message):
     uid = message.from_user.id; chat_id = message.chat.id
@@ -1465,42 +1532,40 @@ def menu_seal(message):
 def seal_selected(call, sid=None):
     if sid is None:
         try:
-            sid = int(call.data.split("_"))
+            sid = int(call.data.split("_")[1])
         except (IndexError, ValueError):
             bot.answer_callback_query(call.id, "Ошибка!", show_alert=True)
             return
-    
+
     check_baby_growth(sid)
     seal = get_seal(sid)
     if not seal:
         bot.answer_callback_query(call.id, "Тюлень не найден!", show_alert=True)
         return
-    
+
     uid = call.from_user.id
     fn = get_fishnets(uid)
     es, ed, eh = get_effective_stats(sid)
     mb = get_mood_bonus(sid)
     skills = get_seal_skills(sid)
     marriage_info = get_marriage_info(sid)
-    
-    # Получаем талант один раз
     talent = get_seal_talent(sid)
 
-    t = f"🦭 *{seal}*\n🐟 Рыбнетки: {fn}\n\n📊 Ур:{seal} (оп:{seal}/{exp_for_level(seal)})\n"
-    t += f"❤️ Здоровье: {seal}/{seal}"
-    if eh != seal: t += f" (с экип: {eh})"
-    t += f"\n😊 Настроение: {seal}"
+    t = f"🦭 *{seal[2]}*\n🐟 Рыбнетки: {fn}\n\n📊 Ур:{seal[9]} (оп:{seal[10]}/{exp_for_level(seal[9])})\n"
+    t += f"❤️ Здоровье: {seal[3]}/{seal[4]}"
+    if eh != seal[4]: t += f" (с экип: {eh})"
+    t += f"\n😊 Настроение: {seal[5]}"
     if mb > 0: t += f" (+{mb})"
-    t += f"\n🍖 Сытость: {seal}\n💪 Сила: {seal}"
-    if es != seal: t += f" (с экип: {es})"
-    t += f"\n🛡️ Защита: {seal}"
-    if ed != seal: t += f" (с экип: {ed})"
+    t += f"\n🍖 Сытость: {seal[6]}\n💪 Сила: {seal[7]}"
+    if es != seal[7]: t += f" (с экип: {es})"
+    t += f"\n🛡️ Защита: {seal[8]}"
+    if ed != seal[8]: t += f" (с экип: {ed})"
     t += "\n"
 
     if marriage_info:
         t += f"\n💍 В браке с: {marriage_info}\n"
 
-    ap = seal if len(seal) > 23 else None
+    ap = seal[23] if len(seal) > 23 else None
     if ap:
         ap_label = ap
         for r in CRAFT_RECIPES:
@@ -1513,7 +1578,6 @@ def seal_selected(call, sid=None):
         t += "\n*Навыки:*\n"
         for sk in skills: t += f"  {sk['name']}\n"
 
-    # Вывод таланта (Блок 7)
     if talent:
         t += f"\n🎯 Талант: {TALENTS[talent]['name']}\n"
 
@@ -1528,48 +1592,43 @@ def seal_selected(call, sid=None):
                 ench = get_enchantment_for_item(uid, item_name)
             suffix = f" [{ench}]" if ench else ""
             eq.append(f"{icon}{item_name}{suffix}")
-    if len(seal) > 22 and seal:
-        eq.append(f"✨{seal}")
+    if len(seal) > 22 and seal[22]:
+        eq.append(f"✨{seal[22]}")
     t += f"\n🎒 Экип: {', '.join(eq) if eq else 'нет'}\n"
 
-    if len(seal) > 11 and seal == 1:
+    if len(seal) > 11 and seal[11] == 1:
         try:
-            born = datetime.fromisoformat(seal)
+            born = datetime.fromisoformat(seal[12])
             days_left = BABY_GROW_DAYS - (datetime.now() - born).days
             t += f"\n🍼 Тюленёнок! Вырастет через {max(0, days_left)} дн.\n"
         except Exception:
             t += "\n🍼 Тюленёнок!\n"
 
-    # Формирование клавиатуры
     m = types.InlineKeyboardMarkup(row_width=2)
     m.add(
         types.InlineKeyboardButton("🍖 Кормить", callback_data=f"feed_{sid}"),
         types.InlineKeyboardButton("🎾 Играть", callback_data=f"play_{sid}")
     )
-    
-    # Добавляем пару кнопок: Лечить всегда, Хиллер - только если есть талант
     row = [types.InlineKeyboardButton("💊 Лечить", callback_data=f"heal_{sid}")]
     if talent == "healer":
         row.append(types.InlineKeyboardButton("💚 Лечение хиллера", callback_data=f"tlheal_{sid}"))
     m.add(*row)
-
     m.add(
-        types.InlineKeyboardButton("👕 Снять", callback_data=f"unequip_{sid}"),
-        types.InlineKeyboardButton("🧪 Зелье", callback_data=f"spot_{sid}")
+        types.InlineKeyboardButton("👕 Экипировать", callback_data=f"equip_{sid}"),
+        types.InlineKeyboardButton("👕 Снять", callback_data=f"unequip_{sid}")
     )
     m.add(
-        types.InlineKeyboardButton("📸 Фото", callback_data=f"sphoto_{sid}"),
-        types.InlineKeyboardButton("✏️ Имя", callback_data=f"rename_{sid}")
+        types.InlineKeyboardButton("🧪 Зелье", callback_data=f"spot_{sid}"),
+        types.InlineKeyboardButton("📸 Фото", callback_data=f"sphoto_{sid}")
     )
+    m.add(types.InlineKeyboardButton("✏️ Имя", callback_data=f"rename_{sid}"))
     if marriage_info:
         m.add(types.InlineKeyboardButton("💔 Развод", callback_data=f"divorce_{sid}"))
-    
-    # Кнопка "Назад"
     m.add(types.InlineKeyboardButton("◀️ Назад", callback_data="back_main"))
 
     cid = call.message.chat.id
     mid = call.message.message_id
-    photo_path = seal if len(seal) > 20 else None
+    photo_path = seal[20] if len(seal) > 20 else None
 
     if photo_path and os.path.exists(photo_path):
         try: bot.delete_message(cid, mid)
@@ -1585,7 +1644,6 @@ def seal_selected(call, sid=None):
         except Exception:
             bot.send_message(cid, t, reply_markup=m, parse_mode='Markdown')
 
-
 @bot.callback_query_handler(func=lambda c: c.data.startswith("feed_"))
 def seal_feed(call):
     uid = call.from_user.id; sid = int(call.data.split("_")[1]); inv = get_inv(uid)
@@ -1597,7 +1655,7 @@ def seal_feed(call):
     m = types.InlineKeyboardMarkup()
     for i in food:
         info = SHOP_ITEMS.get(i[2], {})
-        m.add(types.InlineKeyboardButton(f"{i[2]} (x{i[4]}) +{info.get('satiety',0)}", callback_data=f"dfd_{sid}_{i[2]}"))
+        m.add(types.InlineKeyboardButton(f"{i[2]} (x{i[4]}) +{info.get('satiety', 0)}", callback_data=f"dfd_{sid}_{i[2]}"))
     m.add(types.InlineKeyboardButton("◀️", callback_data=f"sinfo_{sid}"))
     try:
         bot.edit_message_text("Чем кормить?", call.message.chat.id, call.message.message_id, reply_markup=m)
@@ -1614,7 +1672,7 @@ def seal_do_feed(call):
         bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True); return
     info = SHOP_ITEMS.get(name)
     if not info: bot.answer_callback_query(call.id, "Не найден!"); return
-    update_seal(sid, satiety=min(100, seal[6]+info["satiety"]), mood=min(100, seal[5]+info.get("mood",5)))
+    update_seal(sid, satiety=min(100, seal[6] + info["satiety"]), mood=min(100, seal[5] + info.get("mood", 5)))
     remove_from_inv(uid, name)
     bot.answer_callback_query(call.id, f"{seal[2]} съел {name}!")
     update_quest_progress(uid, "feed", 1); seal_selected(call, sid)
@@ -1628,7 +1686,7 @@ def seal_heal(call):
     if seal[3] >= eh: bot.answer_callback_query(call.id, "Здоров!"); return
     if get_item_qty(uid, "Аптечка 💊") <= 0: bot.answer_callback_query(call.id, "Нет аптечек!"); return
     h = SHOP_ITEMS["Аптечка 💊"]["heal"]
-    update_seal(sid, health=min(eh, seal[3]+h))
+    update_seal(sid, health=min(eh, seal[3] + h))
     remove_from_inv(uid, "Аптечка 💊")
     bot.answer_callback_query(call.id, f"💊 +{h} HP!"); seal_selected(call, sid)
 
@@ -1645,8 +1703,8 @@ def seal_play(call):
             if rem.total_seconds() > 0:
                 bot.answer_callback_query(call.id, f"⏳ {int(rem.total_seconds()//60)}м {int(rem.total_seconds()%60)}с"); return
         except: pass
-    eg = int(random.randint(5,15) * get_exp_mult())
-    update_seal(sid, mood=min(100,seal[5]+25), satiety=max(0,seal[6]-5), exp=seal[10]+eg, play_cooldown=datetime.now().isoformat())
+    eg = int(random.randint(5, 15) * get_exp_mult())
+    update_seal(sid, mood=min(100, seal[5] + 25), satiety=max(0, seal[6] - 5), exp=seal[10] + eg, play_cooldown=datetime.now().isoformat())
     lv = check_levelup(sid); update_quest_progress(uid, "play", 1)
     p = get_player(uid)
     if p and p[5] == "fashion": add_faction_rep(uid, 1)
@@ -1672,7 +1730,7 @@ def seal_equip_menu(call):
     seal = get_seal(sid)
     if not seal or seal[1] != uid:
         bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True); return
-    gt = ("weapon","armor","helmet","shield","accessory","artifact")
+    gt = ("weapon", "armor", "helmet", "shield", "accessory", "artifact")
     gi = [i for i in inv if ITEM_TYPES.get(i[2]) in gt]
     if not gi: bot.answer_callback_query(call.id, "Нет экипировки!"); return
     m = types.InlineKeyboardMarkup()
@@ -1699,10 +1757,10 @@ def seal_do_equip(call):
     if it == "artifact":
         slot = "equipped_artifact"; ci = 22
     else:
-        sm = {"weapon":"equipped_weapon","armor":"equipped_armor","helmet":"equipped_helmet","shield":"equipped_shield","accessory":"equipped_accessory"}
+        sm = {"weapon": "equipped_weapon", "armor": "equipped_armor", "helmet": "equipped_helmet", "shield": "equipped_shield", "accessory": "equipped_accessory"}
         slot = sm.get(it)
         if not slot: bot.answer_callback_query(call.id, "Неизвестный тип!"); return
-        ci = {"equipped_weapon":13,"equipped_armor":14,"equipped_helmet":15,"equipped_shield":16,"equipped_accessory":17}.get(slot)
+        ci = {"equipped_weapon": 13, "equipped_armor": 14, "equipped_helmet": 15, "equipped_shield": 16, "equipped_accessory": 17}.get(slot)
     cv = seal[ci] if ci is not None and len(seal) > ci else None
     if cv: add_to_inv(uid, cv, ITEM_TYPES.get(cv, "armor"), 1)
     update_seal(sid, **{slot: name}); remove_from_inv(uid, name)
@@ -1717,12 +1775,9 @@ def seal_unequip_menu(call):
     if not seal or seal[1] != uid:
         bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True); return
     slots = {
-        "equipped_weapon": ("⚔️ Оружие", 13),
-        "equipped_armor": ("🛡️ Броня", 14),
-        "equipped_helmet": ("🪖 Шлем", 15),
-        "equipped_shield": ("🛡️ Щит", 16),
-        "equipped_accessory": ("🎀 Аксессуар", 17),
-        "equipped_artifact": ("✨ Артефакт", 22),
+        "equipped_weapon": ("⚔️ Оружие", 13), "equipped_armor": ("🛡️ Броня", 14),
+        "equipped_helmet": ("🪖 Шлем", 15), "equipped_shield": ("🛡️ Щит", 16),
+        "equipped_accessory": ("🎀 Аксессуар", 17), "equipped_artifact": ("✨ Артефакт", 22),
     }
     m = types.InlineKeyboardMarkup()
     found = False
@@ -1732,8 +1787,7 @@ def seal_unequip_menu(call):
             found = True
             m.add(types.InlineKeyboardButton(f"Снять {label}: {val}", callback_data=f"unq_{sid}_{col}"))
     if not found:
-        bot.answer_callback_query(call.id, "Нечего снимать!")
-        return
+        bot.answer_callback_query(call.id, "Нечего снимать!"); return
     m.add(types.InlineKeyboardButton("◀️", callback_data=f"sinfo_{sid}"))
     try:
         bot.edit_message_text("👕 Что снять?", call.message.chat.id, call.message.message_id, reply_markup=m)
@@ -1748,10 +1802,8 @@ def seal_do_unequip(call):
     seal = get_seal(sid)
     if not seal or seal[1] != uid:
         bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True); return
-    slot_map = {
-        "equipped_weapon": 13, "equipped_armor": 14, "equipped_helmet": 15,
-        "equipped_shield": 16, "equipped_accessory": 17, "equipped_artifact": 22,
-    }
+    slot_map = {"equipped_weapon": 13, "equipped_armor": 14, "equipped_helmet": 15,
+                "equipped_shield": 16, "equipped_accessory": 17, "equipped_artifact": 22}
     idx = slot_map.get(col)
     if idx is None: bot.answer_callback_query(call.id, "Ошибка!"); return
     item_name = seal[idx] if idx < len(seal) else None
@@ -1810,13 +1862,13 @@ def menu_shop(message):
     fn = get_fishnets(uid)
     td = max(get_shop_disc(), get_faction_disc(uid))
     t = f"🛒 *Магазин*\n🐟 {fn}\n"
-    if td > 0: t += f"Скидка: {int(td*100)}%\n"
+    if td > 0: t += f"Скидка: {int(td * 100)}%\n"
     t += "\n"; m = types.InlineKeyboardMarkup(row_width=1)
     for n, i in SHOP_ITEMS.items():
         pr = int(i["price"] * (1 - td))
         if i["type"] == "food": t += f"  {n} — 🐟{pr} (+{i['satiety']})\n"
         elif i["type"] == "medkit": t += f"  {n} — 🐟{pr} (+{i['heal']}HP)\n"
-        elif i["type"] == "accessory": t += f"  {n} — 🐟{pr} (+{ACCESSORY_BONUSES.get(n,0)}😊)\n"
+        elif i["type"] == "accessory": t += f"  {n} — 🐟{pr} (+{ACCESSORY_BONUSES.get(n, 0)}😊)\n"
         elif i["type"] == "potion_base": t += f"  {n} — 🐟{pr} (для зелий)\n"
         m.add(types.InlineKeyboardButton(f"{n} — 🐟{pr}", callback_data=f"buy_{n}"))
     bot.send_message(chat_id, t, parse_mode='Markdown', reply_markup=m)
@@ -1907,7 +1959,7 @@ _enchant_items_cache = {}
 def menu_enchant(message):
     uid = message.from_user.id; chat_id = message.chat.id
     inv = get_inv(uid)
-    equippable = [i for i in inv if ITEM_TYPES.get(i[2]) in ("weapon","armor","helmet","shield")]
+    equippable = [i for i in inv if ITEM_TYPES.get(i[2]) in ("weapon", "armor", "helmet", "shield")]
     if not equippable:
         bot.send_message(chat_id, "Нет предметов для зачарования! Нужны оружие, броня, шлемы или щиты.")
         return
@@ -1972,7 +2024,7 @@ def menu_work(message):
 def work_sel(call):
     uid = call.from_user.id; sid = int(call.data.split("_")[1]); seal = get_seal(sid)
     if not seal: return
-    if seal[1] != uid:  # ИСПРАВЛЕНО: проверка владельца
+    if seal[1] != uid:
         bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True); return
     if seal[6] < 20: bot.answer_callback_query(call.id, "Сытость<20!"); return
     wc = seal[18]
@@ -1996,7 +2048,7 @@ def work_do(call):
     if ji < 0 or ji >= len(JOBS): bot.answer_callback_query(call.id, "Не найдена!"); return
     job = JOBS[ji]; seal = get_seal(sid)
     if not seal: return
-    if seal[1] != uid:  # ИСПРАВЛЕНО: проверка владельца
+    if seal[1] != uid:
         bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True); return
     if seal[6] < 20 or seal[5] < 10: bot.answer_callback_query(call.id, "Не может!"); return
     wc = seal[18]
@@ -2009,8 +2061,8 @@ def work_do(call):
         except: pass
     rw = random.randint(job["reward_min"], job["reward_max"]) + seal[9] * 3
     eg = int(random.randint(10, 25) * get_exp_mult())
-    update_seal(sid, mood=max(0,seal[5]-job["mood_cost"]), satiety=max(0,seal[6]-job["satiety_cost"]),
-                exp=seal[10]+eg, work_cooldown=datetime.now().isoformat(), work_cooldown_min=job["cooldown_min"])
+    update_seal(sid, mood=max(0, seal[5] - job["mood_cost"]), satiety=max(0, seal[6] - job["satiety_cost"]),
+                exp=seal[10] + eg, work_cooldown=datetime.now().isoformat(), work_cooldown_min=job["cooldown_min"])
     add_fishnets(uid, rw); lv = check_levelup(sid)
     log = f"💼 {seal[2]}: {job['name']}\n💰 🐟{rw}\n📈 +{eg}оп\n⏳ кд{job['cooldown_min']}м"
     if lv: log += f"\n🎉 Ур.{lv}!"
@@ -2037,19 +2089,19 @@ def menu_battle(message):
 def do_battle(call):
     uid = call.from_user.id; sid = int(call.data.split("_")[1]); seal = get_seal(sid)
     if not seal: return
-    if seal[1] != uid:  # ИСПРАВЛЕНО: проверка владельца
+    if seal[1] != uid:
         bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True); return
     if seal[3] <= 0: bot.answer_callback_query(call.id, "Не может!"); return
     es, ed, eh = get_effective_stats(sid); skills = get_seal_skills(sid)
     ps, pd, pdd, prg, psp, ptn = get_active_potion_mods(sid)
     boss = random.choice(BOSSES); bn = boss["name"]
-    bhp = random.randint(60,100) + seal[9]*10; bstr = random.randint(8,15) + seal[9]*2; bdef = random.randint(3,8) + seal[9]
+    bhp = random.randint(60, 100) + seal[9] * 10; bstr = random.randint(8, 15) + seal[9] * 2; bdef = random.randint(3, 8) + seal[9]
     log = [f"⚔️ *{seal[2]} vs {bn}*\n", f"{seal[2]}: ❤️{seal[3]}/{eh} 💪{es} 🛡️{ed}", f"{bn}: ❤️{bhp} 💪{bstr} 🛡️{bdef}\n"]
     if ps or pd or ptn:
         parts = []
         if ps: parts.append(f"+{ps}💪")
         if pd: parts.append(f"+{pd}🛡️")
-        if ptn: parts.append(f"+{int(ptn*100)}% урон 😤")
+        if ptn: parts.append(f"+{int(ptn * 100)}% урон 😤")
         log.append(f"🧪 Активное зелье: {' '.join(parts)}")
     shp = seal[3]
     talent = get_seal_talent(sid)
@@ -2057,13 +2109,12 @@ def do_battle(call):
     for rnd in range(1, 21):
         if shp <= 0 or bhp <= 0: break
         dmg = es
-        if any(s["effect"]=="berserk" for s in skills) and shp < eh*0.3: dmg = int(dmg*1.5)
-        if random.random() < sum(0.15 for s in skills if s["effect"]=="crit_15"): dmg *= 2; log.append("⚡ Крит!")
-        dmg = max(1, dmg - bdef + random.randint(-3,5))
+        if any(s["effect"] == "berserk" for s in skills) and shp < eh * 0.3: dmg = int(dmg * 1.5)
+        if random.random() < sum(0.15 for s in skills if s["effect"] == "crit_15"): dmg *= 2; log.append("⚡ Крит!")
+        dmg = max(1, dmg - bdef + random.randint(-3, 5))
         if ptn: dmg = int(dmg * (1 + ptn))
-        if talent: dm = talent_on_defend(dm, talent)
         bhp -= dmg
-        log.append(f"Р{rnd}: {seal[2]} →{dmg} (босс {max(0,bhp)}❤️)")
+        log.append(f"Р{rnd}: {seal[2]} →{dmg} (босс {max(0, bhp)}❤️)")
         if talent:
             extra = talent_on_attack(sid, dmg, talent)
             if extra > 0:
@@ -2071,35 +2122,36 @@ def do_battle(call):
                 log.append(f"  ✨ Талант: +{extra}!")
         if bhp <= 0: break
         if psp > 0 and bhp > 0 and random.random() < 0.5:
-            d2 = max(1, es - bdef + random.randint(-3,5))
+            d2 = max(1, es - bdef + random.randint(-3, 5))
             if ptn: d2 = int(d2 * (1 + ptn))
             bhp -= d2
             log.append(f"💨 Скорость! →{d2}")
         if bhp <= 0: break
-        if random.random() < sum(0.10 for s in skills if s["effect"]=="double_strike") and bhp > 0:
-            d2 = max(1, es - bdef + random.randint(-3,5))
+        if random.random() < sum(0.10 for s in skills if s["effect"] == "double_strike") and bhp > 0:
+            d2 = max(1, es - bdef + random.randint(-3, 5))
             if ptn: d2 = int(d2 * (1 + ptn))
             bhp -= d2; log.append(f"⚔️ Двойной! →{d2}")
         if bhp <= 0: break
-        dodge_chance = sum(0.10 for s in skills if s["effect"]=="dodge_10") + pdd/100.0
+        dodge_chance = sum(0.10 for s in skills if s["effect"] == "dodge_10") + pdd / 100.0
         if random.random() < dodge_chance: log.append("💨 Уклонение!"); continue
-        dm = max(1, bstr - ed + random.randint(-2,4))
-        if any(s["effect"]=="dmg_reduce_10" for s in skills): dm = int(dm*0.9)
-        shp -= dm; log.append(f"{bn} →{dm} ({seal[2]} {max(0,shp)}❤️)")
+        dm = max(1, bstr - ed + random.randint(-2, 4))
+        if talent: dm = talent_on_defend(dm, talent)
+        if any(s["effect"] == "dmg_reduce_10" for s in skills): dm = int(dm * 0.9)
+        shp -= dm; log.append(f"{bn} →{dm} ({seal[2]} {max(0, shp)}❤️)")
         if prg > 0: shp = min(eh, shp + prg)
         if talent and not healer_used:
             ht = talent_heal_battle(eh, talent)
             if ht > 0:
                 shp = min(eh, shp + ht); healer_used = True
                 log.append(f"💚 Талант: +{ht}HP!")
-        ls = sum(1 for s in skills if s["effect"]=="lifesteal_5")
-        if ls: heal = int(dm*0.05*ls); shp = min(eh, shp+heal)
-        if any(s["effect"]=="thorns" for s in skills): bhp -= int(dm*0.2)
+        ls = sum(1 for s in skills if s["effect"] == "lifesteal_5")
+        if ls: heal = int(dm * 0.05 * ls); shp = min(eh, shp + heal)
+        if any(s["effect"] == "thorns" for s in skills): bhp -= int(dm * 0.2)
     decrement_potion_use(sid)
     if bhp <= 0:
-        rw = random.randint(20,50) + seal[9]*5; eg = int(random.randint(20,40) * get_exp_mult())
+        rw = random.randint(20, 50) + seal[9] * 5; eg = int(random.randint(20, 40) * get_exp_mult())
         add_fishnets(uid, rw)
-        update_seal(sid, exp=seal[10]+eg, mood=min(100,seal[5]+15), health=min(eh, max(1, shp)))
+        update_seal(sid, exp=seal[10] + eg, mood=min(100, seal[5] + 15), health=min(eh, max(1, shp)))
         lv = check_levelup(sid)
         log.append(f"\n🎉 *Победа!* 🐟{rw} +{eg}оп")
         if lv: log.append(f"📈 Ур.{lv}!")
@@ -2109,393 +2161,228 @@ def do_battle(call):
         pl = get_player(uid)
         if pl and pl[5] == "hunters": add_faction_rep(uid, 2)
     elif shp <= 0:
-        update_seal(sid, health=max(1, shp), mood=max(0,seal[5]-20))
+        update_seal(sid, health=max(1, shp), mood=max(0, seal[5] - 20))
         log.append("\n💀 *Поражение...*")
     else:
         update_seal(sid, health=min(eh, max(1, shp)))
         log.append("\n🤝 Ничья!")
     bot.edit_message_text("\n".join(log), call.message.chat.id, call.message.message_id, parse_mode='Markdown')
-
 # ==================== ПОДЗЕМЕЛЬЕ ====================
 @bot.message_handler(commands=['dungeon'])
 @bot.message_handler(func=lambda m: m.text == "🏰 Подземелье")
 def menu_dungeon(message):
-    uid = message.from_user.id
-    chat_id = message.chat.id
+    uid = message.from_user.id; chat_id = message.chat.id
     seals = get_player_seals(uid)
     if not seals:
-        bot.send_message(chat_id, "Нет тюленей!")
-        return
+        bot.send_message(chat_id, "Нет тюленей!"); return
     m = types.InlineKeyboardMarkup()
     for s in seals:
-        # Пропускаем тюленей, которые нельзя брать в подземелье (флаг в индексе 11)
-        if s == 1:
-            continue
-        m.add(types.InlineKeyboardButton(f"{s} (ур.{s})", callback_data=f"ds_{s}"))
+        if s[11] == 1: continue
+        m.add(types.InlineKeyboardButton(f"{s[2]} (ур.{s[9]})", callback_data=f"ds_{s[0]}"))
     if not m.keyboard:
-        bot.send_message(chat_id, "Все малыши не готовы к бою!")
-        return
+        bot.send_message(chat_id, "Все малыши не готовы к бою!"); return
     bot.send_message(chat_id, "🏰 Выберите тюленя (10 этажей, сундуки!):", reply_markup=m)
-
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("ds_"))
 def dng_start(call):
     uid = call.from_user.id
     try:
-        sid = int(call.data.split("_"))
-    except ValueError:
-        bot.answer_callback_query(call.id, "Ошибка данных!", show_alert=True)
-        return
-
+        sid = int(call.data.split("_")[1])
+    except (ValueError, IndexError):
+        bot.answer_callback_query(call.id, "Ошибка данных!", show_alert=True); return
     seal = get_seal(sid)
     if not seal:
-        bot.answer_callback_query(call.id, "Тюлень не найден!", show_alert=True)
-        return
-
-    if seal != uid:
-        bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True)
-        return
-
-    if seal <= 20:
-        bot.answer_callback_query(call.id, "HP < 20! Тюлень слишком слаб.", show_alert=True)
-        return
-
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("DELETE FROM dungeon_runs WHERE user_id=?", (uid,))
-        c.execute(
-            "INSERT INTO dungeon_runs (user_id, seal_id, current_floor, active, current_monster) "
-            "VALUES (?, ?, 1, 1, 0)",
-            (uid, sid)
-        )
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        print(f"DB error in dng_start: {e}")
-        bot.answer_callback_query(call.id, "Ошибка базы данных!", show_alert=True)
-        return
-
+        bot.answer_callback_query(call.id, "Тюлень не найден!", show_alert=True); return
+    if seal[1] != uid:
+        bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True); return
+    if seal[3] <= 20:
+        bot.answer_callback_query(call.id, "HP < 20! Тюлень слишком слаб.", show_alert=True); return
+    conn = get_conn(); c = conn.cursor()
+    c.execute("DELETE FROM dungeon_runs WHERE user_id=?", (uid,))
+    c.execute("INSERT INTO dungeon_runs (user_id, seal_id, current_floor, active, current_monster) VALUES (?, ?, 1, 1, 0)", (uid, sid))
+    conn.commit()
     dng_floor(call, sid, 1, 0)
-
 
 def dng_floor(call, sid, fl, mon_idx):
     seal = get_seal(sid)
-    if not seal:
-        return
-
-    # Защита от выхода за границы конфигурации
+    if not seal: return
     if fl < 1 or fl > len(DUNGEON_FLOORS_CONFIG):
-        bot.answer_callback_query(call.id, "Ошибка этажа!", show_alert=True)
-        return
-
+        bot.answer_callback_query(call.id, "Ошибка этажа!", show_alert=True); return
     config = DUNGEON_FLOORS_CONFIG[min(fl - 1, len(DUNGEON_FLOORS_CONFIG) - 1)]
     total_mons = config["monsters"]
-
-    # Если все монстры на этаже пройдены — выдаем сундук
     if mon_idx >= total_mons:
         rarity = config["chest_rarity"]
         chest_name = f"Сундук [{rarity}] 📦"
         add_to_inv(call.from_user.id, chest_name, "chest", 1)
         update_quest_chain(call.from_user.id, "dungeon_floor", fl)
-
         if fl >= DUNGEON_TOTAL_FLOORS:
-            # Финальный этаж: опыт, награды, квесты
             eg = int((100 + fl * 30) * get_exp_mult())
             s = get_seal(sid)
+            lv = 0
             if s:
-                update_seal(sid, exp=s + eg)
+                update_seal(sid, exp=s[10] + eg)
                 lv = check_levelup(sid)
-            else:
-                lv = 0
-
             t = f"🏆 *Подземелье пройдено!*\n🎁 {chest_name}\n📈 +{eg} оп"
-            if lv:
-                t += f"\n🎉 Ур.{lv}!"
-
+            if lv: t += f"\n🎉 Ур.{lv}!"
             update_quest_progress(call.from_user.id, "dungeon", 1)
             update_quest_chain(call.from_user.id, "dungeon_complete", 1)
-
             pl = get_player(call.from_user.id)
-            if pl and pl == "explorers":
-                add_faction_rep(call.from_user.id, 3)
-
-            try:
-                conn = sqlite3.connect(DB_PATH)
-                c = conn.cursor()
-                c.execute("UPDATE dungeon_runs SET active=0 WHERE user_id=?", (call.from_user.id,))
-                conn.commit()
-                conn.close()
-            except Exception as e:
-                print(f"DB error in final floor: {e}")
-
+            if pl and pl[5] == "explorers": add_faction_rep(call.from_user.id, 3)
+            conn = get_conn(); c = conn.cursor()
+            c.execute("UPDATE dungeon_runs SET active=0 WHERE user_id=?", (call.from_user.id,))
+            conn.commit()
             try:
                 bot.edit_message_text(t, call.message.chat.id, call.message.message_id, parse_mode='Markdown')
             except Exception:
                 bot.send_message(call.message.chat.id, t, parse_mode='Markdown')
         else:
-            # Обычный этаж пройден: переход на следующий
             nf = fl + 1
             t = f"✅ Этаж {fl} пройден!\n🎁 {chest_name}\nОткрыт этаж {nf}!"
             m = types.InlineKeyboardMarkup()
             m.add(types.InlineKeyboardButton("➡️ Дальше", callback_data=f"dn_{sid}_{nf}_0"))
             m.add(types.InlineKeyboardButton("🏃 Выйти", callback_data=f"df_{sid}_{fl}"))
-
-            try:
-                conn = sqlite3.connect(DB_PATH)
-                c = conn.cursor()
-                c.execute("UPDATE dungeon_runs SET current_monster=0 WHERE user_id=?", (call.from_user.id,))
-                conn.commit()
-                conn.close()
-            except Exception as e:
-                print(f"DB error in floor clear: {e}")
-
+            conn = get_conn(); c = conn.cursor()
+            c.execute("UPDATE dungeon_runs SET current_monster=0 WHERE user_id=?", (call.from_user.id,))
+            conn.commit()
             try:
                 bot.edit_message_text(t, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=m)
             except Exception:
                 bot.send_message(call.message.chat.id, t, parse_mode='Markdown', reply_markup=m)
         return
 
-    # Обычный ход: показываем статистику и кнопки
     mon = get_floor_monster(fl, mon_idx)
     if not mon:
-        bot.answer_callback_query(call.id, "Монстр не найден!", show_alert=True)
-        return
-
+        bot.answer_callback_query(call.id, "Монстр не найден!", show_alert=True); return
     es, ed, eh = get_effective_stats(sid)
     t = f"🏰 *Этаж {fl}/{DUNGEON_TOTAL_FLOORS}* | Монстр {mon_idx + 1}/{total_mons}\n\n"
-    t += f"🦭 {seal}: ❤️{seal}/{eh} 💪{es} 🛡️{ed}\n"
+    t += f"🦭 {seal[2]}: ❤️{seal[3]}/{eh} 💪{es} 🛡️{ed}\n"
     t += f"{mon['name']}: ❤️{mon['hp']} 💪{mon['str']} 🛡️{mon['def']}\n"
-
     m = types.InlineKeyboardMarkup()
     m.add(types.InlineKeyboardButton("⚔️ Атаковать", callback_data=f"da_{sid}_{fl}_{mon_idx}"))
     m.add(types.InlineKeyboardButton("🏃 Сбежать", callback_data=f"df_{sid}_{fl}"))
-
     try:
         bot.edit_message_text(t, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=m)
     except Exception:
         bot.send_message(call.message.chat.id, t, parse_mode='Markdown', reply_markup=m)
-
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("da_"))
 def dng_atk(call):
     uid = call.from_user.id
     try:
         p = call.data.split("_")
-        if len(p) < 4:
-            bot.answer_callback_query(call.id, "Ошибка данных!", show_alert=True)
-            return
-        sid = int(p)
-        fl = int(p)
-        mon_idx = int(p)
+        sid = int(p[1]); fl = int(p[2]); mon_idx = int(p[3])
     except (ValueError, IndexError):
-        bot.answer_callback_query(call.id, "Ошибка формата данных!", show_alert=True)
-        return
-
+        bot.answer_callback_query(call.id, "Ошибка формата данных!", show_alert=True); return
     seal = get_seal(sid)
     if not seal:
-        bot.answer_callback_query(call.id, "Тюлень не найден!", show_alert=True)
-        return
-
-    if seal != uid:
-        bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True)
-        return
-
+        bot.answer_callback_query(call.id, "Тюлень не найден!", show_alert=True); return
+    if seal[1] != uid:
+        bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True); return
     mon = get_floor_monster(fl, mon_idx)
     if not mon:
-        bot.answer_callback_query(call.id, "Монстр не найден!", show_alert=True)
-        return
-
+        bot.answer_callback_query(call.id, "Монстр не найден!", show_alert=True); return
     es, ed, eh = get_effective_stats(sid)
     skills = get_seal_skills(sid)
     ps, pd, pdd, prg, psp, ptn = get_active_potion_mods(sid)
-    shp = min(seal, eh)
+    shp = min(seal[3], eh)
     talent = get_seal_talent(sid)
     healer_used = False
-
-    log = [f"⚔️ Этаж {fl}: {seal} vs {mon['name']}"]
+    log = [f"⚔️ Этаж {fl}: {seal[2]} vs {mon['name']}"]
     if ps or pd or ptn:
         parts = []
-        if ps:
-            parts.append(f"+{ps}💪")
-        if pd:
-            parts.append(f"+{pd}🛡️")
-        if ptn:
-            parts.append(f"+{int(ptn * 100)}% урон 😤")
+        if ps: parts.append(f"+{ps}💪")
+        if pd: parts.append(f"+{pd}🛡️")
+        if ptn: parts.append(f"+{int(ptn * 100)}% урон 😤")
         log.append(f"🧪 Зелье: {' '.join(parts)}")
 
-    # ЦИКЛ БОЯ
     while shp > 0 and mon["hp"] > 0:
-        # Атака тюленя
         d = es
-        if any(s["effect"] == "berserk" for s in skills) and shp < eh * 0.3:
-            d = int(d * 1.5)
-
-        if random.random() < sum(0.15 for s in skills if s["effect"] == "crit_15"):
-            d *= 2
-            log.append("⚡ Крит!")
-
+        if any(s["effect"] == "berserk" for s in skills) and shp < eh * 0.3: d = int(d * 1.5)
+        if random.random() < sum(0.15 for s in skills if s["effect"] == "crit_15"): d *= 2; log.append("⚡ Крит!")
         d = max(1, d - mon["def"] + random.randint(-2, 5))
-        if ptn:
-            d = int(d * (1 + ptn))
-
+        if ptn: d = int(d * (1 + ptn))
         mon["hp"] -= d
-
         if talent:
             extra = talent_on_attack(sid, d, talent)
             if extra > 0:
-                mon["hp"] -= extra
-                log.append(f"✨ Талант: +{extra}!")
-
-        log.append(f"{seal} →{d} (монстр {max(0, mon['hp'])}❤️)")
-
-        if mon["hp"] <= 0:
-            break
-
-        # Доп. атаки: скорость и двойной удар
+                mon["hp"] -= extra; log.append(f"✨ Талант: +{extra}!")
+        log.append(f"{seal[2]} →{d} (монстр {max(0, mon['hp'])}❤️)")
+        if mon["hp"] <= 0: break
         if psp > 0 and random.random() < 0.5:
             d2 = max(1, es - mon["def"] + random.randint(-2, 5))
-            if ptn:
-                d2 = int(d2 * (1 + ptn))
-            mon["hp"] -= d2
-            log.append(f"💨 Скорость! →{d2}")
-
-        if mon["hp"] <= 0:
-            break
-
+            if ptn: d2 = int(d2 * (1 + ptn))
+            mon["hp"] -= d2; log.append(f"💨 Скорость! →{d2}")
+        if mon["hp"] <= 0: break
         if random.random() < sum(0.10 for s in skills if s["effect"] == "double_strike"):
             d2 = max(1, es - mon["def"] + random.randint(-2, 5))
-            if ptn:
-                d2 = int(d2 * (1 + ptn))
-            mon["hp"] -= d2
-            log.append(f"⚔️ Двойной! →{d2}")
-
-        if mon["hp"] <= 0:
-            break
-
-        # Ход монстра
+            if ptn: d2 = int(d2 * (1 + ptn))
+            mon["hp"] -= d2; log.append(f"⚔️ Двойной! →{d2}")
+        if mon["hp"] <= 0: break
         dodge_chance = sum(0.10 for s in skills if s["effect"] == "dodge_10") + pdd / 100.0
-        if random.random() < dodge_chance:
-            log.append("💨 Уклонение!")
-            continue
-
+        if random.random() < dodge_chance: log.append("💨 Уклонение!"); continue
         dm = max(1, mon["str"] - ed + random.randint(-1, 4))
-        if talent:
-            dm = talent_on_defend(dm, talent)
-        if any(s["effect"] == "dmg_reduce_10" for s in skills):
-            dm = int(dm * 0.9)
-
-        shp -= dm
-        log.append(f"{mon['name']} →{dm} ({seal} {max(0, shp)}❤️)")
-
-        # Пассивные эффекты восстановления (срабатывают каждый ход после получения урона)
-        if prg > 0:
-            shp = min(eh, shp + prg)
-
+        if talent: dm = talent_on_defend(dm, talent)
+        if any(s["effect"] == "dmg_reduce_10" for s in skills): dm = int(dm * 0.9)
+        shp -= dm; log.append(f"{mon['name']} →{dm} ({seal[2]} {max(0, shp)}❤️)")
+        if prg > 0: shp = min(eh, shp + prg)
         if talent and not healer_used:
             ht = talent_heal_battle(eh, talent)
             if ht > 0:
-                shp = min(eh, shp + ht)
-                healer_used = True
-                log.append(f"💚 Талант: +{ht}HP!")
-
+                shp = min(eh, shp + ht); healer_used = True; log.append(f"💚 Талант: +{ht}HP!")
         ls = sum(1 for s in skills if s["effect"] == "lifesteal_5")
         if ls:
             heal = int(dm * 0.05 * ls)
-            if heal > 0:
-                shp = min(eh, shp + heal)
-                log.append(f"🩸 Лайфстил: +{heal}HP!")
-
+            if heal > 0: shp = min(eh, shp + heal); log.append(f"🩸 Лайфстил: +{heal}HP!")
         if any(s["effect"] == "thorns" for s in skills):
             thorns_dmg = int(dm * 0.2)
-            if thorns_dmg > 0:
-                mon["hp"] -= thorns_dmg
-                log.append(f"🌵 Шипы: -{thorns_dmg}HP монстру!")
-
+            if thorns_dmg > 0: mon["hp"] -= thorns_dmg; log.append(f"🌵 Шипы: -{thorns_dmg}HP монстру!")
     decrement_potion_use(sid)
 
-    # Обработка результата боя
     if mon["hp"] <= 0:
         update_seal(sid, health=min(eh, max(1, shp)))
         log.append("\n✅ Повержен!")
         d = process_drops(uid, mon.get("drops", {}))
-        if d:
-            log.append(f"📦 {', '.join(d)}")
-
-        try:
-            conn = sqlite3.connect(DB_PATH)
-            c = conn.cursor()
-            c.execute("UPDATE dungeon_runs SET current_monster=? WHERE user_id=?", (mon_idx + 1, uid))
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            print(f"DB error in battle win: {e}")
-
+        if d: log.append(f"📦 {', '.join(d)}")
+        conn = get_conn(); c = conn.cursor()
+        c.execute("UPDATE dungeon_runs SET current_monster=? WHERE user_id=?", (mon_idx + 1, uid))
+        conn.commit()
         next_idx = mon_idx + 1
         config = DUNGEON_FLOORS_CONFIG[min(fl - 1, len(DUNGEON_FLOORS_CONFIG) - 1)]
-        if next_idx >= config["monsters"]:
-            log.append("\n🎁 Этаж зачищен!")
-
+        if next_idx >= config["monsters"]: log.append("\n🎁 Этаж зачищен!")
         m = types.InlineKeyboardMarkup()
         m.add(types.InlineKeyboardButton("➡️ Дальше", callback_data=f"dn_{sid}_{fl}_{next_idx}"))
         m.add(types.InlineKeyboardButton("🏃 Выйти", callback_data=f"df_{sid}_{fl}"))
-
         full_log = "\n".join(log)
-        try:
-            bot.delete_message(call.message.chat.id, call.message.message_id)
-        except Exception:
-            pass
+        try: bot.delete_message(call.message.chat.id, call.message.message_id)
+        except Exception: pass
         bot.send_message(call.message.chat.id, full_log, parse_mode='Markdown', reply_markup=m)
-
     elif shp <= 0:
-        update_seal(sid, health=1, mood=max(0, seal - 30))
-        log.append(f"\n💀 {seal} пал...")
-
-        try:
-            conn = sqlite3.connect(DB_PATH)
-            c = conn.cursor()
-            c.execute("UPDATE dungeon_runs SET active=0 WHERE user_id=?", (uid,))
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            print(f"DB error in battle loss: {e}")
-
+        update_seal(sid, health=1, mood=max(0, seal[5] - 30))
+        log.append(f"\n💀 {seal[2]} пал...")
+        conn = get_conn(); c = conn.cursor()
+        c.execute("UPDATE dungeon_runs SET active=0 WHERE user_id=?", (uid,))
+        conn.commit()
         full_log = "\n".join(log)
-        try:
-            bot.delete_message(call.message.chat.id, call.message.message_id)
-        except Exception:
-            pass
+        try: bot.delete_message(call.message.chat.id, call.message.message_id)
+        except Exception: pass
         bot.send_message(call.message.chat.id, full_log, parse_mode='Markdown')
-
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("dn_"))
 def dng_next(call):
     try:
         p = call.data.split("_")
-        if len(p) < 4:
-            bot.answer_callback_query(call.id, "Ошибка данных!", show_alert=True)
-            return
-        sid = int(p)
-        fl = int(p)
-        mon_idx = int(p)
+        sid = int(p[1]); fl = int(p[2]); mon_idx = int(p[3])
         dng_floor(call, sid, fl, mon_idx)
     except Exception as e:
         print(f"Error in dng_next: {e}")
         bot.answer_callback_query(call.id, "Ошибка перехода!", show_alert=True)
 
-
 @bot.callback_query_handler(func=lambda c: c.data.startswith("df_"))
 def dng_flee(call):
     uid = call.from_user.id
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("UPDATE dungeon_runs SET active=0 WHERE user_id=?", (uid,))
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        print(f"DB error in flee: {e}")
-
+    conn = get_conn(); c = conn.cursor()
+    c.execute("UPDATE dungeon_runs SET active=0 WHERE user_id=?", (uid,))
+    conn.commit()
     try:
         bot.edit_message_text("🏃 Сбежали.", call.message.chat.id, call.message.message_id)
     except Exception:
@@ -2503,7 +2390,7 @@ def dng_flee(call):
 
 # ==================== РЫБАЛКА ====================
 fish_active = {}
-_enchant_items_cache = {}
+
 @bot.message_handler(commands=['fish'])
 @bot.message_handler(func=lambda m: m.text == "🎣 Рыбалка")
 def cmd_fish(message):
@@ -2518,7 +2405,7 @@ def cmd_fish(message):
                 bot.send_message(chat_id, f"⏳ {int(rem.total_seconds()//60)}м {int(rem.total_seconds()%60)}с"); return
         except: pass
     fish = random.choice(FISH_TYPES)
-    opts = ["Подсечь!","Ждать","Отпустить"]; opts.remove(fish["correct"]); opts.append(fish["correct"]); random.shuffle(opts)
+    opts = ["Подсечь!", "Ждать", "Отпустить"]; opts.remove(fish["correct"]); opts.append(fish["correct"]); random.shuffle(opts)
     t = f"🎣 *Рыбалка!*\n\nПоклёвка: {fish['name']}\nУ вас 5 секунд!\n"
     m = types.InlineKeyboardMarkup(row_width=3)
     for o in opts: m.add(types.InlineKeyboardButton(o, callback_data=f"fh_{o}_{fish['name']}"))
@@ -2541,7 +2428,7 @@ def fish_cb(call):
     fish = next((f for f in FISH_TYPES if f["name"] == fn), None)
     if not fish: bot.answer_callback_query(call.id, "Истекла!"); return
     bonus = get_fish_bonus()
-    rm, rx = int(fish["reward"][0]*bonus), int(fish["reward"][1]*bonus)
+    rm, rx = int(fish["reward"][0] * bonus), int(fish["reward"][1] * bonus)
     if act == fish["correct"]:
         rw = random.randint(rm, rx); add_fishnets(uid, rw)
         bot.edit_message_text(f"🎣 *Поймано!*\n\n{fn}!\n🐟{rw}", call.message.chat.id, call.message.message_id, parse_mode='Markdown')
@@ -2574,8 +2461,8 @@ def duel_target(message, sid):
     uid = message.from_user.id; chat_id = message.chat.id
     txt = message.text.strip()
     if txt.startswith("@"):
-        conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-        c.execute("SELECT user_id FROM players WHERE username=?", (txt[1:],)); r = c.fetchone(); conn.close()
+        c = get_conn().cursor()
+        c.execute("SELECT user_id FROM players WHERE username=?", (txt[1:],)); r = c.fetchone()
         if not r: bot.send_message(chat_id, "Не найден!"); return
         oid = r[0]
     else:
@@ -2604,26 +2491,25 @@ def duel_accept(call):
         m.add(types.InlineKeyboardButton(f"{s[2]} (ур.{s[9]})", callback_data=f"duseal_{did}_{s[0]}"))
     bot.edit_message_text("Выберите тюленя:", call.message.chat.id, call.message.message_id, reply_markup=m)
 
-    ctalent = get_seal_talent(csid); otalent = get_seal_talent(osid)
-    ch_used = False; oh_used = False
-
 @bot.callback_query_handler(func=lambda c: c.data.startswith("duseal_"))
 def duel_seal(call):
     uid = call.from_user.id; p = call.data.split("_"); did = int(p[1]); osid = int(p[2])
     duel = get_duel(did)
     if not duel or duel[5] != 'pending': bot.answer_callback_query(call.id, "Недоступна!"); return
     seal = get_seal(osid)
-    if not seal or seal[1] != uid:  # ИСПРАВЛЕНО: проверка владельца
+    if not seal or seal[1] != uid:
         bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True); return
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("UPDATE duels SET status='active',opponent_seal_id=? WHERE duel_id=?", (osid, did))
-    conn.commit(); conn.close()
+    conn = get_conn(); c = conn.cursor()
+    c.execute("UPDATE duels SET status='active', opponent_seal_id=? WHERE duel_id=?", (osid, did))
+    conn.commit()
     csid = duel[3]; cseal = get_seal(csid); oseal = get_seal(osid)
     if not cseal or not oseal: bot.answer_callback_query(call.id, "Тюлень не найден!"); return
     ces, ced, ceh = get_effective_stats(csid); oes, oed, oeh = get_effective_stats(osid)
     csk = get_seal_skills(csid); osk = get_seal_skills(osid)
     cps, cpd, cpdd, cprg, cpsp, cptn = get_active_potion_mods(csid)
     ops, opd, opdd, oprg, opsp, optn = get_active_potion_mods(osid)
+    ctalent = get_seal_talent(csid); otalent = get_seal_talent(osid)
+    ch_used = False; oh_used = False
     chp = min(cseal[3], ceh); ohp = min(oseal[3], oeh)
     log = [f"🤺 *Дуэль: {cseal[2]} vs {oseal[2]}*\n",
            f"{cseal[2]}: ❤️{cseal[3]}/{ceh} 💪{ces} 🛡️{ced}", f"{oseal[2]}: ❤️{oseal[3]}/{oeh} 💪{oes} 🛡️{oed}\n"]
@@ -2632,39 +2518,36 @@ def duel_seal(call):
         rnd += 1
         if rnd > 15: break
         cd = ces
-        if any(s["effect"]=="berserk" for s in csk) and chp < ceh*0.3: cd = int(cd*1.5)
-        if random.random() < sum(0.15 for s in csk if s["effect"]=="crit_15"): cd *= 2; log.append("⚡ Крит!")
-        cd = max(1, cd - oed + random.randint(-3,5))
+        if any(s["effect"] == "berserk" for s in csk) and chp < ceh * 0.3: cd = int(cd * 1.5)
+        if random.random() < sum(0.15 for s in csk if s["effect"] == "crit_15"): cd *= 2; log.append("⚡ Крит!")
+        cd = max(1, cd - oed + random.randint(-3, 5))
         if cptn: cd = int(cd * (1 + cptn))
         ohp -= cd
         if ctalent:
             extra = talent_on_attack(csid, cd, ctalent)
-            if extra > 0:
-                ohp -= extra; log.append(f"✨ {cseal[2]}: +{extra}!")
-
-        log.append(f"Р{rnd}: {cseal[2]} →{cd} ({oseal[2]} {max(0,ohp)}❤️)")
+            if extra > 0: ohp -= extra; log.append(f"✨ {cseal[2]}: +{extra}!")
+        log.append(f"Р{rnd}: {cseal[2]} →{cd} ({oseal[2]} {max(0, ohp)}❤️)")
         if ohp <= 0: break
         if cpsp > 0 and ohp > 0 and random.random() < 0.5:
-            d2 = max(1, ces - oed + random.randint(-3,5))
+            d2 = max(1, ces - oed + random.randint(-3, 5))
             if cptn: d2 = int(d2 * (1 + cptn))
             ohp -= d2; log.append(f"💨 Скорость! →{d2}")
         if ohp <= 0: break
-        if random.random() < sum(0.10 for s in csk if s["effect"]=="double_strike") and ohp > 0:
-            d2 = max(1, ces - oed + random.randint(-3,5))
+        if random.random() < sum(0.10 for s in csk if s["effect"] == "double_strike") and ohp > 0:
+            d2 = max(1, ces - oed + random.randint(-3, 5))
             if cptn: d2 = int(d2 * (1 + cptn))
             ohp -= d2; log.append(f"⚔️ Двойной! →{d2}")
         if ohp <= 0: break
         od = oes
-        if any(s["effect"]=="berserk" for s in osk) and ohp < oeh*0.3: od = int(od*1.5)
-        if random.random() < sum(0.15 for s in osk if s["effect"]=="crit_15"): od *= 2; log.append("⚡ Крит в ответ!")
-        cdodge = cpdd / 100.0 + sum(0.10 for s in csk if s["effect"]=="dodge_10")
+        if any(s["effect"] == "berserk" for s in osk) and ohp < oeh * 0.3: od = int(od * 1.5)
+        if random.random() < sum(0.15 for s in osk if s["effect"] == "crit_15"): od *= 2; log.append("⚡ Крит в ответ!")
+        cdodge = cpdd / 100.0 + sum(0.10 for s in csk if s["effect"] == "dodge_10")
         if random.random() < cdodge: log.append("💨 Уклонение!"); continue
-        od = max(1, od - ced + random.randint(-3,5))
+        od = max(1, od - ced + random.randint(-3, 5))
         if ctalent: od = talent_on_defend(od, ctalent)
-        if any(s["effect"]=="dmg_reduce_10" for s in csk): od = int(od*0.9)
+        if any(s["effect"] == "dmg_reduce_10" for s in csk): od = int(od * 0.9)
         if optn: od = int(od * (1 + optn))
-        chp -= od
-        log.append(f"{oseal[2]} →{od} ({cseal[2]} {max(0,chp)}❤️)")
+        chp -= od; log.append(f"{oseal[2]} →{od} ({cseal[2]} {max(0, chp)}❤️)")
         if cprg > 0: chp = min(ceh, chp + cprg)
         if ctalent and not ch_used:
             ht = talent_heal_battle(ceh, ctalent)
@@ -2673,28 +2556,28 @@ def duel_seal(call):
         if otalent and not oh_used:
             ht = talent_heal_battle(oeh, otalent)
             if ht > 0: ohp = min(oeh, ohp + ht); oh_used = True; log.append(f"💚 {oseal[2]}: +{ht}HP!")
-        ls_c = sum(1 for s in csk if s["effect"]=="lifesteal_5")
-        if ls_c: heal = int(od*0.05*ls_c); chp = min(ceh, chp+heal)
-        ls_o = sum(1 for s in osk if s["effect"]=="lifesteal_5")
-        if ls_o: heal = int(cd*0.05*ls_o); ohp = min(oeh, ohp+heal)
-        if any(s["effect"]=="thorns" for s in csk): ohp -= int(od*0.2)
-        if any(s["effect"]=="thorns" for s in osk): chp -= int(cd*0.2)
+        ls_c = sum(1 for s in csk if s["effect"] == "lifesteal_5")
+        if ls_c: heal = int(od * 0.05 * ls_c); chp = min(ceh, chp + heal)
+        ls_o = sum(1 for s in osk if s["effect"] == "lifesteal_5")
+        if ls_o: heal = int(cd * 0.05 * ls_o); ohp = min(oeh, ohp + heal)
+        if any(s["effect"] == "thorns" for s in csk): ohp -= int(od * 0.2)
+        if any(s["effect"] == "thorns" for s in osk): chp -= int(cd * 0.2)
     decrement_potion_use(csid); decrement_potion_use(osid)
     winner_id = 0
     if ohp <= 0:
         winner_id = duel[1]; log.append(f"\n🎉 *{cseal[2]} победил!*")
-        rw = min(get_fishnets(duel[2])//10, 100); add_fishnets(duel[1], rw); add_fishnets(duel[2], -rw)
+        rw = min(get_fishnets(duel[2]) // 10, 100); add_fishnets(duel[1], rw); add_fishnets(duel[2], -rw)
         log.append(f"💰 Награда: 🐟{rw}"); update_quest_chain(duel[1], "duel_win", 1)
     elif chp <= 0:
         winner_id = duel[2]; log.append(f"\n🎉 *{oseal[2]} победил!*")
-        rw = min(get_fishnets(duel[1])//10, 100); add_fishnets(duel[2], rw); add_fishnets(duel[1], -rw)
+        rw = min(get_fishnets(duel[1]) // 10, 100); add_fishnets(duel[2], rw); add_fishnets(duel[1], -rw)
         log.append(f"💰 Награда: 🐟{rw}"); update_quest_chain(duel[2], "duel_win", 1)
     else: log.append("\n🤝 Ничья!")
     update_seal(csid, health=min(ceh, max(1, chp)))
     update_seal(osid, health=min(oeh, max(1, ohp)))
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("UPDATE duels SET status='completed',winner_id=?,reward=? WHERE duel_id=?", (winner_id, rw, did))
-    conn.commit(); conn.close()
+    conn = get_conn(); c = conn.cursor()
+    c.execute("UPDATE duels SET status='completed', winner_id=?, reward=? WHERE duel_id=?", (winner_id, rw, did))
+    conn.commit()
     bot.edit_message_text("\n".join(log), call.message.chat.id, call.message.message_id, parse_mode='Markdown')
     other_id = duel[1] if duel[1] != uid else duel[2]
     try: bot.send_message(other_id, "\n".join(log), parse_mode='Markdown')
@@ -2704,8 +2587,8 @@ def duel_seal(call):
 def duel_reject(call):
     did = int(call.data.split("_")[1]); duel = get_duel(did)
     if not duel: bot.answer_callback_query(call.id, "Не найдена!"); return
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("UPDATE duels SET status='rejected' WHERE duel_id=?", (did,)); conn.commit(); conn.close()
+    conn = get_conn(); c = conn.cursor()
+    c.execute("UPDATE duels SET status='rejected' WHERE duel_id=?", (did,)); conn.commit()
     bot.edit_message_text("❌ Дуэль отклонена.", call.message.chat.id, call.message.message_id)
     try: bot.send_message(duel[1], "❌ Ваш вызов отклонён.")
     except: pass
@@ -2738,9 +2621,9 @@ def cmd_questchain(message):
 @bot.callback_query_handler(func=lambda c: c.data.startswith("qcs_"))
 def qc_start(call):
     uid = call.from_user.id; cid = int(call.data.split("_")[1])
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("INSERT OR IGNORE INTO player_quest_chains (user_id,chain_id,current_step,step_progress,completed) VALUES (?,?,0,0,0)", (uid, cid))
-    conn.commit(); conn.close()
+    conn = get_conn(); c = conn.cursor()
+    c.execute("INSERT OR IGNORE INTO player_quest_chains (user_id, chain_id, current_step, step_progress, completed) VALUES (?, ?, 0, 0, 0)", (uid, cid))
+    conn.commit()
     bot.answer_callback_query(call.id, "Цепочка начата!")
     show_quest_chains(uid, call.message.chat.id, call.message.message_id)
 
@@ -2777,19 +2660,20 @@ def tr_set(message, name):
     try: pr = int(message.text.strip())
     except: bot.send_message(chat_id, "Число!"); return
     if pr < 1: bot.send_message(chat_id, ">0!"); return
-    if get_item_qty(uid, name) <= 0: bot.send_message(chat_id, "Нет предмета!"); return  # ИСПРАВЛЕНО
+    if get_item_qty(uid, name) <= 0: bot.send_message(chat_id, "Нет предмета!"); return
     it = ITEM_TYPES.get(name, "misc")
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("INSERT INTO trade_offers (seller_id,item_name,item_type,price,created_at,active) VALUES (?,?,?,?,?,1)", (uid, name, it, pr, datetime.now().isoformat()))
-    conn.commit(); conn.close(); remove_from_inv(uid, name)
+    conn = get_conn(); c = conn.cursor()
+    c.execute("INSERT INTO trade_offers (seller_id, item_name, item_type, price, created_at, active) VALUES (?, ?, ?, ?, ?, 1)",
+              (uid, name, it, pr, datetime.now().isoformat()))
+    conn.commit(); remove_from_inv(uid, name)
     bot.send_message(chat_id, f"✅ {name} за 🐟{pr}!")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("trl_"))
 def trade_list(call):
     uid = call.from_user.id; pg = int(call.data.split("_")[1])
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT offer_id,item_name,price FROM trade_offers WHERE active=1 AND seller_id!=? ORDER BY created_at DESC LIMIT 10 OFFSET ?", (uid, pg*10))
-    offers = c.fetchall(); conn.close()
+    c = get_conn().cursor()
+    c.execute("SELECT offer_id, item_name, price FROM trade_offers WHERE active=1 AND seller_id!=? ORDER BY created_at DESC LIMIT 10 OFFSET ?", (uid, pg * 10))
+    offers = c.fetchall()
     if not offers: bot.edit_message_text("Пусто.", call.message.chat.id, call.message.message_id); return
     t = "📋 *Офферы*\n\n"; m = types.InlineKeyboardMarkup()
     for oid, nm, pr in offers:
@@ -2804,14 +2688,14 @@ def trade_list(call):
 @bot.callback_query_handler(func=lambda c: c.data.startswith("trbuy_"))
 def trade_buy(call):
     uid = call.from_user.id; oid = int(call.data.split("_")[1])
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT seller_id,item_name,item_type,price,active FROM trade_offers WHERE offer_id=?", (oid,)); r = c.fetchone()
-    if not r or not r[4]: bot.answer_callback_query(call.id, "Не найден!"); conn.close(); return
+    conn = get_conn(); c = conn.cursor()
+    c.execute("SELECT seller_id, item_name, item_type, price, active FROM trade_offers WHERE offer_id=?", (oid,)); r = c.fetchone()
+    if not r or not r[4]: bot.answer_callback_query(call.id, "Не найден!"); return
     sid, nm, it, pr, _ = r
-    if sid == uid: bot.answer_callback_query(call.id, "Своё!"); conn.close(); return
-    if get_fishnets(uid) < pr: bot.answer_callback_query(call.id, "Не хватает 🐟!"); conn.close(); return
+    if sid == uid: bot.answer_callback_query(call.id, "Своё!"); return
+    if get_fishnets(uid) < pr: bot.answer_callback_query(call.id, "Не хватает 🐟!"); return
     add_fishnets(uid, -pr); add_fishnets(sid, pr); add_to_inv(uid, nm, it)
-    c.execute("UPDATE trade_offers SET active=0 WHERE offer_id=?", (oid,)); conn.commit(); conn.close()
+    c.execute("UPDATE trade_offers SET active=0 WHERE offer_id=?", (oid,)); conn.commit()
     bot.answer_callback_query(call.id, f"Куплено: {nm}!")
     try: bot.send_message(sid, f"💰 {nm} продан за 🐟{pr}!")
     except: pass
@@ -2819,9 +2703,9 @@ def trade_buy(call):
 @bot.callback_query_handler(func=lambda c: c.data == "trm")
 def trade_mine(call):
     uid = call.from_user.id
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT offer_id,item_name,price,active FROM trade_offers WHERE seller_id=? ORDER BY created_at DESC", (uid,))
-    offers = c.fetchall(); conn.close()
+    c = get_conn().cursor()
+    c.execute("SELECT offer_id, item_name, price, active FROM trade_offers WHERE seller_id=? ORDER BY created_at DESC", (uid,))
+    offers = c.fetchall()
     if not offers: bot.answer_callback_query(call.id, "Пусто!"); return
     t = "📦 *Мои офферы*\n\n"; m = types.InlineKeyboardMarkup()
     for oid, nm, pr, act in offers:
@@ -2833,10 +2717,10 @@ def trade_mine(call):
 @bot.callback_query_handler(func=lambda c: c.data.startswith("trcan_"))
 def trade_cancel(call):
     uid = call.from_user.id; oid = int(call.data.split("_")[1])
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT item_name,item_type,active FROM trade_offers WHERE offer_id=? AND seller_id=?", (oid, uid)); r = c.fetchone()
-    if not r or not r[2]: bot.answer_callback_query(call.id, "Не найден!"); conn.close(); return
-    c.execute("UPDATE trade_offers SET active=0 WHERE offer_id=?", (oid,)); conn.commit(); conn.close()
+    conn = get_conn(); c = conn.cursor()
+    c.execute("SELECT item_name, item_type, active FROM trade_offers WHERE offer_id=? AND seller_id=?", (oid, uid)); r = c.fetchone()
+    if not r or not r[2]: bot.answer_callback_query(call.id, "Не найден!"); return
+    c.execute("UPDATE trade_offers SET active=0 WHERE offer_id=?", (oid,)); conn.commit()
     add_to_inv(uid, r[0], r[1]); bot.answer_callback_query(call.id, f"Снято: {r[0]}!")
 
 @bot.callback_query_handler(func=lambda c: c.data == "trb")
@@ -2886,24 +2770,24 @@ def clan_create_emblem(message, name):
     except: bot.send_message(chat_id, "Число!"); return
     if idx < 0 or idx >= len(CLAN_EMOJIS): bot.send_message(chat_id, "Неверный номер!"); return
     emblem = CLAN_EMOJIS[idx]
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("INSERT INTO clans (name,emblem,leader_id,created_at) VALUES (?,?,?,?)", (name, emblem, uid, datetime.now().isoformat()))
+    conn = get_conn(); c = conn.cursor()
+    c.execute("INSERT INTO clans (name, emblem, leader_id, created_at) VALUES (?, ?, ?, ?)", (name, emblem, uid, datetime.now().isoformat()))
     cid = c.lastrowid
-    c.execute("INSERT INTO clan_members (clan_id,user_id,joined_at) VALUES (?,?,?)", (cid, uid, datetime.now().isoformat()))
-    conn.commit(); conn.close()
+    c.execute("INSERT INTO clan_members (clan_id, user_id, joined_at) VALUES (?, ?, ?)", (cid, uid, datetime.now().isoformat()))
+    conn.commit()
     bot.send_message(chat_id, f"✅ Клан {name} {emblem} создан!")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("cleave_"))
 def clan_leave(call):
     uid = call.from_user.id; cid = int(call.data.split("_")[1])
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_conn(); c = conn.cursor()
     c.execute("DELETE FROM clan_members WHERE user_id=? AND clan_id=?", (uid, cid))
     c.execute("SELECT leader_id FROM clans WHERE clan_id=?", (cid,)); r = c.fetchone()
     if r and r[0] == uid:
         c.execute("DELETE FROM clan_members WHERE clan_id=?", (cid,))
         c.execute("DELETE FROM clans WHERE clan_id=?", (cid,))
         c.execute("DELETE FROM clan_dungeons WHERE clan_id=?", (cid,))
-    conn.commit(); conn.close()
+    conn.commit()
     bot.answer_callback_query(call.id, "Вы покинули клан!")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("cmem_"))
@@ -2924,10 +2808,10 @@ def clan_dng_start(call):
         for s in get_player_seals(mid):
             if s[11] == 0 and s[9] >= CLAN_DUNGEON_MIN_LEVEL: all_seals.append(s)
     if not all_seals: bot.answer_callback_query(call.id, "Нет тюленей 4+ уровня!"); return
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_conn(); c = conn.cursor()
     c.execute("DELETE FROM clan_dungeons WHERE clan_id=?", (cid,))
-    c.execute("INSERT INTO clan_dungeons (clan_id,current_floor,active,started_by) VALUES (?,1,1,?)", (cid, uid))
-    conn.commit(); conn.close()
+    c.execute("INSERT INTO clan_dungeons (clan_id, current_floor, active, started_by) VALUES (?, 1, 1, ?)", (cid, uid))
+    conn.commit()
     clan_dng_floor(call, cid, 1)
 
 def clan_dng_floor(call, cid, fl):
@@ -2936,7 +2820,7 @@ def clan_dng_floor(call, cid, fl):
         for s in get_player_seals(mid):
             if s[11] == 0 and s[9] >= CLAN_DUNGEON_MIN_LEVEL: all_seals.append(s)
     if not all_seals: bot.edit_message_text("Нет доступных тюленей!", call.message.chat.id, call.message.message_id); return
-    mon = CLAN_DUNGEON_MONSTERS[fl-1].copy()
+    mon = CLAN_DUNGEON_MONSTERS[fl - 1].copy()
     total_str = sum(get_effective_stats(s[0])[0] for s in all_seals)
     total_def = sum(get_effective_stats(s[0])[1] for s in all_seals)
     total_hp = sum(s[3] for s in all_seals)
@@ -2956,31 +2840,28 @@ def clan_dng_atk(call):
         for s in get_player_seals(mid):
             if s[11] == 0 and s[9] >= CLAN_DUNGEON_MIN_LEVEL: all_seals.append(s)
     if not all_seals: bot.answer_callback_query(call.id, "Нет тюленей!"); return
-    mon = CLAN_DUNGEON_MONSTERS[fl-1].copy()
+    mon = CLAN_DUNGEON_MONSTERS[fl - 1].copy()
     ts = sum(get_effective_stats(s[0])[0] for s in all_seals)
     td = sum(get_effective_stats(s[0])[1] for s in all_seals)
     talent_b = {}
     for s in all_seals:
         t = get_seal_talent(s[0])
         if t: talent_b[t] = talent_b.get(t, 0) + 1
-
     seal_hp = {s[0]: s[3] for s in all_seals}; thp = sum(seal_hp.values())
     log = [f"🏰 Этаж {fl}: {len(all_seals)} тюленей vs {mon['name']}"]
     while thp > 0 and mon["hp"] > 0:
         dmg = max(1, ts - mon["def"] + random.randint(-5, 10)); mon["hp"] -= dmg
-        if talent_b.get("mage",0) > 0:
+        if talent_b.get("mage", 0) > 0:
             ex = int(dmg * 0.3 * talent_b["mage"]); mon["hp"] -= ex; log.append(f"✨ Маги: +{ex}!")
-        if talent_b.get("summoner",0) > 0:
+        if talent_b.get("summoner", 0) > 0:
             ex = 15 * talent_b["summoner"]; mon["hp"] -= ex; log.append(f"🐾 Призыв: +{ex}!")
-        if talent_b.get("archer",0) > 0 and random.random() < 0.2 * talent_b["archer"]:
+        if talent_b.get("archer", 0) > 0 and random.random() < 0.2 * talent_b["archer"]:
             ex = int(dmg * 0.5); mon["hp"] -= ex; log.append(f"🏹 Залп: +{ex}!")
-
         log.append(f"Тюлени →{dmg} (монстр {max(0, mon['hp'])}❤️)")
         if mon["hp"] <= 0: break
         dm = max(1, mon["str"] - td + random.randint(-2, 6))
-        if talent_b.get("warrior",0) > 0:
+        if talent_b.get("warrior", 0) > 0:
             dm = int(dm * (1 - 0.25 * min(1, talent_b["warrior"] / len(all_seals))))
-
         target = random.choice(all_seals)
         old_hp = seal_hp[target[0]]
         new_hp = max(1, old_hp - dm)
@@ -2994,12 +2875,12 @@ def clan_dng_atk(call):
         for mid in members:
             add_fishnets(mid, rw)
             for s in get_player_seals(mid):
-                if s[11] == 0: update_seal(s[0], exp=s[10]+eg)
+                if s[11] == 0: update_seal(s[0], exp=s[10] + eg)
         log.append(f"🏆 Все получили 🐟{rw} и +{eg}оп!")
         if fl >= CLAN_DUNGEON_FLOORS:
             log.append("👑 *Клановое подземелье пройдено!*")
-            conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-            c.execute("UPDATE clan_dungeons SET active=0 WHERE clan_id=?", (cid,)); conn.commit(); conn.close()
+            conn = get_conn(); c = conn.cursor()
+            c.execute("UPDATE clan_dungeons SET active=0 WHERE clan_id=?", (cid,)); conn.commit()
             bot.edit_message_text("\n".join(log), call.message.chat.id, call.message.message_id, parse_mode='Markdown')
         else:
             nf = fl + 1; log.append(f"Открыт этаж {nf}!")
@@ -3009,9 +2890,9 @@ def clan_dng_atk(call):
             bot.edit_message_text("\n".join(log), call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=m)
     elif thp <= 0:
         log.append("\n💀 Все тюлени пали...")
-        for s in all_seals: update_seal(s[0], health=1, mood=max(0, s[5]-20))
-        conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-        c.execute("UPDATE clan_dungeons SET active=0 WHERE clan_id=?", (cid,)); conn.commit(); conn.close()
+        for s in all_seals: update_seal(s[0], health=1, mood=max(0, s[5] - 20))
+        conn = get_conn(); c = conn.cursor()
+        c.execute("UPDATE clan_dungeons SET active=0 WHERE clan_id=?", (cid,)); conn.commit()
         bot.edit_message_text("\n".join(log), call.message.chat.id, call.message.message_id, parse_mode='Markdown')
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("cdn_"))
@@ -3021,8 +2902,8 @@ def clan_dng_next(call):
 @bot.callback_query_handler(func=lambda c: c.data.startswith("cdf_"))
 def clan_dng_flee(call):
     cid = int(call.data.split("_")[1])
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("UPDATE clan_dungeons SET active=0 WHERE clan_id=?", (cid,)); conn.commit(); conn.close()
+    conn = get_conn(); c = conn.cursor()
+    c.execute("UPDATE clan_dungeons SET active=0 WHERE clan_id=?", (cid,)); conn.commit()
     bot.edit_message_text("🏃 Отступление.", call.message.chat.id, call.message.message_id)
 
 # ==================== ФРАКЦИИ ====================
@@ -3056,8 +2937,8 @@ def faction_join(call):
 def cmd_vote(message):
     uid = message.from_user.id; chat_id = message.chat.id
     today = date.today().isoformat()
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT vote FROM votes WHERE user_id=? AND date=?", (uid, today)); ex = c.fetchone(); conn.close()
+    c = get_conn().cursor()
+    c.execute("SELECT vote FROM votes WHERE user_id=? AND date=?", (uid, today)); ex = c.fetchone()
     ev = get_todays_event(); t = f"🗳 *Голосование*\n\n{ev['desc']}\n\n"
     act = get_active_event_text()
     if act: t += f"✅ Активно: {act}\n\n"
@@ -3070,12 +2951,11 @@ def cmd_vote(message):
 @bot.callback_query_handler(func=lambda c: c.data in ("vy", "vn"))
 def vote_cb(call):
     uid = call.from_user.id; vote = "yes" if call.data == "vy" else "no"; today = date.today().isoformat()
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_conn(); c = conn.cursor()
     try:
-        c.execute("INSERT INTO votes (user_id,event_type,vote,date) VALUES (?,?,?,?)", (uid, "daily", vote, today)); conn.commit()
+        c.execute("INSERT INTO votes (user_id, event_type, vote, date) VALUES (?, ?, ?, ?)", (uid, "daily", vote, today)); conn.commit()
     except sqlite3.IntegrityError:
-        bot.answer_callback_query(call.id, "Уже голосовали!"); conn.close(); return
-    conn.close()
+        bot.answer_callback_query(call.id, "Уже голосовали!"); return
     if check_vote_result():
         ev = get_todays_event(); activate_event(ev["event_type"], ev["effect"])
         bot.answer_callback_query(call.id, f"Активировано: {ev['desc']}")
@@ -3106,8 +2986,8 @@ def marry_partner(message, sid1):
     uid = message.from_user.id; chat_id = message.chat.id
     txt = message.text.strip()
     if txt.startswith("@"):
-        conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-        c.execute("SELECT user_id FROM players WHERE username=?", (txt[1:],)); r = c.fetchone(); conn.close()
+        c = get_conn().cursor()
+        c.execute("SELECT user_id FROM players WHERE username=?", (txt[1:],)); r = c.fetchone()
         if not r: bot.send_message(chat_id, "Не найден!"); return
         pid = r[0]
     else:
@@ -3125,47 +3005,35 @@ def marry_do(call):
     uid = call.from_user.id; p = call.data.split("_"); s1, s2, pid = int(p[1]), int(p[2]), int(p[3])
     se1, se2 = get_seal(s1), get_seal(s2)
     if not se1 or not se2: bot.answer_callback_query(call.id, "Не найден!"); return
-    # ИСПРАВЛЕНО: проверка принадлежности тюленей
-    if se1[1] != uid:
-        bot.answer_callback_query(call.id, "Это не ваш тюлень!"); return
-    if se2[1] != pid:
-        bot.answer_callback_query(call.id, "Это не тюлень партнёра!"); return
-    if get_seal_count(uid) >= MAX_SEALS:
-        bot.answer_callback_query(call.id, f"Макс {MAX_SEALS} у вас!"); return
-    if get_seal_count(pid) >= MAX_SEALS:
-        bot.answer_callback_query(call.id, f"Макс {MAX_SEALS} у партнёра!"); return
-    # ИСПРАВЛЕНО: проверка, что ни один из тюленей не состоит в браке
+    if se1[1] != uid: bot.answer_callback_query(call.id, "Это не ваш тюлень!"); return
+    if se2[1] != pid: bot.answer_callback_query(call.id, "Это не тюлень партнёра!"); return
+    if get_seal_count(uid) >= MAX_SEALS: bot.answer_callback_query(call.id, f"Макс {MAX_SEALS} у вас!"); return
+    if get_seal_count(pid) >= MAX_SEALS: bot.answer_callback_query(call.id, f"Макс {MAX_SEALS} у партнёра!"); return
     married_ids = get_married_ids()
-    if s1 in married_ids or s2 in married_ids:
-        bot.answer_callback_query(call.id, "Один из тюленей уже в браке!"); return
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("INSERT INTO marriages (seal1_id,seal2_id,player1_id,player2_id,created_at) VALUES (?,?,?,?,?)",
+    if s1 in married_ids or s2 in married_ids: bot.answer_callback_query(call.id, "Один из тюленей уже в браке!"); return
+    conn = get_conn(); c = conn.cursor()
+    c.execute("INSERT INTO marriages (seal1_id, seal2_id, player1_id, player2_id, created_at) VALUES (?, ?, ?, ?, ?)",
               (s1, s2, uid, pid, datetime.now().isoformat()))
-    conn.commit(); conn.close()
+    conn.commit()
     msg = f"💍 Брак! {se1[2]} ❤️ {se2[2]}\n"
-    baby_created = False
-    bn = ""
-    bs = 0
-    bd = 0
+    baby_created = False; bn = ""; bs = 0; bd = 0
     if random.random() < 0.5:
-        bn = random.choice(["Малыш","Кроха","Пузырь","Лапик","Шлёпик","Ням"])
-        bs = (se1[7]+se2[7])//4 + random.randint(1,3)
-        bd = (se1[8]+se2[8])//4 + random.randint(0,2)
-        # ИСПРАВЛЕНО: ребёнок создаётся для обоих игроков
-        conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-        c.execute("INSERT INTO seals (owner_id,name,health,max_health,mood,satiety,strength,defense,level,exp,is_baby,born_at) VALUES (?,?,?,?,?,?,?,?,?,?,1,?)",
+        bn = random.choice(["Малыш", "Кроха", "Пузырь", "Лапик", "Шлёпик", "Ням"])
+        bs = (se1[7] + se2[7]) // 4 + random.randint(1, 3)
+        bd = (se1[8] + se2[8]) // 4 + random.randint(0, 2)
+        c = conn.cursor()
+        c.execute("INSERT INTO seals (owner_id, name, health, max_health, mood, satiety, strength, defense, level, exp, is_baby, born_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)",
                   (uid, bn, 60, 60, 70, 70, bs, bd, 1, 0, datetime.now().isoformat()))
-        conn.commit(); conn.close()
-        conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-        c.execute("INSERT INTO seals (owner_id,name,health,max_health,mood,satiety,strength,defense,level,exp,is_baby,born_at) VALUES (?,?,?,?,?,?,?,?,?,?,1,?)",
+        conn.commit()
+        c = conn.cursor()
+        c.execute("INSERT INTO seals (owner_id, name, health, max_health, mood, satiety, strength, defense, level, exp, is_baby, born_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)",
                   (pid, bn, 60, 60, 70, 70, bs, bd, 1, 0, datetime.now().isoformat()))
-        conn.commit(); conn.close()
+        conn.commit()
         msg += f"🍼 Тюленёнок — {bn}! С:{bs} З:{bd}\nВырастет через {BABY_GROW_DAYS} дн.\nРебёнок у обоих игроков!"
         baby_created = True
     else:
         msg += "Нет тюленёнка..."
     bot.edit_message_text(msg, call.message.chat.id, call.message.message_id, parse_mode='Markdown')
-    # ИСПРАВЛЕНО: уведомление партнёру
     try:
         notify = f"💍 Ваш тюлень {se2[2]} вступил в брак с {se1[2]}!\n"
         if baby_created:
@@ -3175,23 +3043,20 @@ def marry_do(call):
         bot.send_message(pid, notify, parse_mode='Markdown')
     except: pass
 
-# ИСПРАВЛЕНО: обработчик развода
 @bot.callback_query_handler(func=lambda c: c.data.startswith("divorce_"))
 def divorce_seal(call):
     uid = call.from_user.id; sid = int(call.data.split("_")[1])
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_conn(); c = conn.cursor()
     c.execute("SELECT marriage_id, player1_id, player2_id, seal1_id, seal2_id FROM marriages WHERE seal1_id=? OR seal2_id=?", (sid, sid))
     r = c.fetchone()
-    if not r: bot.answer_callback_query(call.id, "Нет брака!"); conn.close(); return
+    if not r: bot.answer_callback_query(call.id, "Нет брака!"); return
     mid_db, p1, p2, s1_id, s2_id = r
-    if uid != p1 and uid != p2: bot.answer_callback_query(call.id, "Не ваш брак!"); conn.close(); return
-    c.execute("DELETE FROM marriages WHERE marriage_id=?", (mid_db,)); conn.commit(); conn.close()
+    if uid != p1 and uid != p2: bot.answer_callback_query(call.id, "Не ваш брак!"); return
+    c.execute("DELETE FROM marriages WHERE marriage_id=?", (mid_db,)); conn.commit()
     partner_id = p2 if uid == p1 else p1
     partner_seal_id = s2_id if sid == s1_id else s1_id
-    my_seal = get_seal(sid)
-    partner_seal = get_seal(partner_seal_id)
-    my_name = my_seal[2] if my_seal else "?"
-    partner_name = partner_seal[2] if partner_seal else "?"
+    my_seal = get_seal(sid); partner_seal = get_seal(partner_seal_id)
+    my_name = my_seal[2] if my_seal else "?"; partner_name = partner_seal[2] if partner_seal else "?"
     bot.answer_callback_query(call.id, f"💔 {my_name} и {partner_name} развелись!")
     try: bot.send_message(partner_id, f"💔 {my_name} и {partner_name} развелись...")
     except: pass
@@ -3237,19 +3102,19 @@ def menu_quests(message):
 @bot.callback_query_handler(func=lambda c: c.data.startswith("qclaim_"))
 def quest_claim(call):
     uid = call.from_user.id; qid = int(call.data.split("_")[1])
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT quest_id,quest_target,quest_progress,quest_reward,claimed,exp_reward,food_reward FROM daily_quests WHERE quest_id=? AND claimed=0", (qid,)); r = c.fetchone()
-    if not r: bot.answer_callback_query(call.id, "Уже получено!"); conn.close(); return
+    conn = get_conn(); c = conn.cursor()
+    c.execute("SELECT quest_id, quest_target, quest_progress, quest_reward, claimed, exp_reward, food_reward FROM daily_quests WHERE quest_id=? AND claimed=0", (qid,)); r = c.fetchone()
+    if not r: bot.answer_callback_query(call.id, "Уже получено!"); return
     qid_db, qtgt, qprog, qrew, cl, exp_r, food_r = r
-    if qprog < qtgt: bot.answer_callback_query(call.id, "Не выполнено!"); conn.close(); return
-    c.execute("UPDATE daily_quests SET claimed=1 WHERE quest_id=?", (qid,)); conn.commit(); conn.close()
+    if qprog < qtgt: bot.answer_callback_query(call.id, "Не выполнено!"); return
+    c.execute("UPDATE daily_quests SET claimed=1 WHERE quest_id=?", (qid,)); conn.commit()
     add_fishnets(uid, qrew)
     reward_msg = f"🐟{qrew}"
     if exp_r and exp_r > 0:
         seals = get_player_seals(uid)
         for s in seals:
             if s[11] == 0:
-                update_seal(s[0], exp=s[10]+exp_r)
+                update_seal(s[0], exp=s[10] + exp_r)
                 check_levelup(s[0])
         reward_msg += f", 📈+{exp_r}оп"
     if food_r:
@@ -3257,6 +3122,7 @@ def quest_claim(call):
         reward_msg += f", 🍴{food_r}"
     bot.answer_callback_query(call.id, f"Получено: {reward_msg}!")
     show_quests(uid, call.message.chat.id, call.message.message_id)
+
 # ==================== ТАЛАНТЫ — ОБРАБОТЧИКИ ====================
 @bot.message_handler(commands=['talent'])
 @bot.message_handler(func=lambda m: m.text == "🎯 Талант")
@@ -3319,9 +3185,9 @@ def menu_lottery(message):
     total_t = get_total_tickets_today()
     pool = total_t * LOTTERY_TICKET_PRICE
     t = f"🎰 *Лотерея*\n\nЦена билета: 🐟{LOTTERY_TICKET_PRICE}\nВаши билеты: {my_t}\nВсего: {total_t}\nПриз: 🐟{pool}\nРозыгрыш в 21:00\n\n"
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c = get_conn().cursor()
     c.execute("SELECT draw_date, winner_id, prize FROM lottery_results ORDER BY draw_date DESC LIMIT 1")
-    last = c.fetchone(); conn.close()
+    last = c.fetchone()
     if last: t += f"Последний победитель: 🐟{last[2]} ({last[0]})\n"
     m = types.InlineKeyboardMarkup()
     m.add(types.InlineKeyboardButton(f"Купить билет (🐟{LOTTERY_TICKET_PRICE})", callback_data="lotbuy"))
@@ -3338,9 +3204,9 @@ def lottery_buy(call):
 @bot.message_handler(func=lambda m: m.text == "🗺️ Сокровища")
 def menu_treasure(message):
     uid = message.from_user.id; chat_id = message.chat.id
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c = get_conn().cursor()
     c.execute("SELECT seal_id FROM treasure_runs WHERE user_id=? AND active=1", (uid,))
-    active = c.fetchone(); conn.close()
+    active = c.fetchone()
     if active:
         t, m = treasure_get_step_text(uid, active[0])
         if t and m: bot.send_message(chat_id, t, parse_mode='Markdown', reply_markup=m)
@@ -3386,13 +3252,12 @@ def stats_decay():
         time.sleep(3600)
         try:
             conn = sqlite3.connect(DB_PATH, timeout=10); c = conn.cursor()
-            c.execute("SELECT seal_id,health,mood,satiety,is_baby FROM seals")
+            c.execute("SELECT seal_id, health, mood, satiety, is_baby FROM seals")
             for sid, hp, mood, sat, is_baby in c.fetchall():
                 nm = max(0, mood - random.randint(3, 8)); ns = max(0, sat - random.randint(5, 10))
                 nh = max(1, hp - random.randint(3, 8)) if ns < 20 else hp
-                c.execute("UPDATE seals SET mood=?,satiety=?,health=? WHERE seal_id=?", (nm, ns, nh, sid))
-                if is_baby == 1:
-                    check_baby_growth(sid)
+                c.execute("UPDATE seals SET mood=?, satiety=?, health=? WHERE seal_id=?", (nm, ns, nh, sid))
+                if is_baby == 1: check_baby_growth(sid)
             conn.commit(); conn.close()
         except: pass
 
@@ -3401,13 +3266,13 @@ def health_regen():
         time.sleep(3600)
         try:
             conn = sqlite3.connect(DB_PATH, timeout=10); c = conn.cursor()
-            c.execute("SELECT seal_id,health,max_health FROM seals WHERE health<max_health")
+            c.execute("SELECT seal_id, health, max_health FROM seals WHERE health < max_health")
             for sid, hp, mhp in c.fetchall():
                 bonus = 25
                 c2 = conn.cursor()
                 c2.execute("SELECT COUNT(*) FROM seal_skills WHERE seal_id=? AND skill_effect='regen'", (sid,))
                 if c2.fetchone()[0] > 0: bonus += 5
-                c.execute("UPDATE seals SET health=? WHERE seal_id=?", (min(mhp, hp+bonus), sid))
+                c.execute("UPDATE seals SET health=? WHERE seal_id=?", (min(mhp, hp + bonus), sid))
             conn.commit(); conn.close()
         except: pass
 
@@ -3434,7 +3299,6 @@ bot.set_my_commands([
     types.BotCommand("talent", "Талант"),
     types.BotCommand("lottery", "Лотерея"),
     types.BotCommand("treasure", "Карты сокровищ"),
-
 ])
 
 if __name__ == "__main__":
