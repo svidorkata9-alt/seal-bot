@@ -2512,7 +2512,6 @@ try:
     print(f"Получено сообщение: chat_id={message.chat.id} user_id={message.from_user.id} text={message.text}")
 except Exception as e:
     print(f"Ошибка в debug-хендлере: {e}")
-
         bot.polling(none_stop=True)
     except Exception as e:
         print(f"❌ Ошибка polling: {e}")
