@@ -1087,13 +1087,17 @@ def cmd_gallery(message):
 def cmd_leaderboard(message):
     chat_id = message.chat.id
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT seals.name,seals.level,players.username FROM seals JOIN players ON seals.owner_id=players.user_id ORDER BY seals.level DESC,seals.exp DESC LIMIT 20")
+    c.execute("""SELECT seals.name, seals.level, players.username
+                 FROM seals LEFT JOIN players ON seals.owner_id=players.user_id
+                 ORDER BY seals.level DESC, seals.exp DESC LIMIT 20""")
     rows = c.fetchall(); conn.close()
     if not rows: bot.send_message(chat_id, "Пусто!"); return
     t = "🏆 *Лидеры*\n\n"; medals = ["🥇","🥈","🥉"]
     for i, (n, l, u) in enumerate(rows):
-        t += f"{medals[i] if i < 3 else str(i+1)+'.'} {n} — ур.{l} (@{u})\n"
+        uname = u if u else "?"
+        t += f"{medals[i] if i < 3 else str(i+1)+'.'} {n} — ур.{l} (@{uname})\n"
     bot.send_message(chat_id, t, parse_mode='Markdown')
+
 
 @bot.message_handler(commands=['inventory'])
 @bot.message_handler(func=lambda m: m.text == "🎒 Инвентарь")
