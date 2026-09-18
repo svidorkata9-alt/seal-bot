@@ -1706,7 +1706,7 @@ def do_battle(call):
         dmg = es
         if any(s["effect"]=="berserk" for s in skills) and shp < eh*0.3: dmg = int(dmg*1.5)
         if random.random() < sum(0.15 for s in skills if s["effect"]=="crit_15"): dmg *= 2; log.append("⚡ Крит!")
-                dmg = max(1, dmg - bdef + random.randint(-3,5)); bhp -= dmg
+        dmg = max(1, dmg - bdef + random.randint(-3,5)); bhp -= dmg
         log.append(f"Р{rnd}: {seal[2]} →{dmg} (босс {max(0,bhp)}❤️)")
         if bhp <= 0: break
         if psp > 0 and bhp > 0 and random.random() < 0.5:
