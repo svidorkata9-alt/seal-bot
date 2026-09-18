@@ -104,7 +104,13 @@ def migration_5(c):
         chat_id INTEGER PRIMARY KEY, message_thread_id INTEGER
     )""")
 
-MIGRATIONS = [migration_1, migration_2, migration_3, migration_4, migration_5]
+def migration_6(c):
+    try: c.execute("ALTER TABLE daily_quests ADD COLUMN exp_reward INTEGER DEFAULT 0")
+    except sqlite3.OperationalError: pass
+    try: c.execute("ALTER TABLE daily_quests ADD COLUMN food_reward TEXT")
+    except sqlite3.OperationalError: pass
+
+MIGRATIONS = [migration_1, migration_2, migration_3, migration_4, migration_5, migration_6]
 
 def run_migrations():
     backup_db()
@@ -438,11 +444,16 @@ RANDOM_ENCOUNTERS = [
 ]
 
 QUEST_TEMPLATES = [
-    {"type": "play", "target": 3, "reward": 30, "desc": "Поиграть 3 раза"}, {"type": "feed", "target": 3, "reward": 30, "desc": "Покормить 3 раза"},
-    {"type": "battle", "target": 1, "reward": 40, "desc": "Победить 1 босса"}, {"type": "dungeon", "target": 1, "reward": 50, "desc": "Пройти 1 подземелье"},
-    {"type": "shop", "target": 1, "reward": 20, "desc": "Купить 1 предмет"}, {"type": "work", "target": 1, "reward": 35, "desc": "Отправить на работу"},
-    {"type": "craft", "target": 1, "reward": 25, "desc": "Скрафтить 1 предмет"}, {"type": "fish", "target": 1, "reward": 25, "desc": "Поймать 1 рыбу"},
-    {"type": "potion", "target": 1, "reward": 30, "desc": "Сварить 1 зелье"}, {"type": "enchant", "target": 1, "reward": 40, "desc": "Зачаровать 1 предмет"},
+    {"type": "play", "target": 3, "reward": 30, "exp": 15, "desc": "Поиграть 3 раза"},
+    {"type": "feed", "target": 3, "reward": 30, "exp": 15, "desc": "Покормить 3 раза"},
+    {"type": "battle", "target": 1, "reward": 40, "exp": 25, "food": "Рыба 🐟", "desc": "Победить 1 босса"},
+    {"type": "dungeon", "target": 1, "reward": 50, "exp": 30, "food": "Кальмар 🦑", "desc": "Пройти 1 подземелье"},
+    {"type": "shop", "target": 1, "reward": 20, "exp": 10, "desc": "Купить 1 предмет"},
+    {"type": "work", "target": 1, "reward": 35, "exp": 20, "desc": "Отправить на работу"},
+    {"type": "craft", "target": 1, "reward": 25, "exp": 15, "desc": "Скрафтить 1 предмет"},
+    {"type": "fish", "target": 1, "reward": 25, "exp": 15, "desc": "Поймать 1 рыбу"},
+    {"type": "potion", "target": 1, "reward": 30, "exp": 20, "desc": "Сварить 1 зелье"},
+    {"type": "enchant", "target": 1, "reward": 40, "exp": 25, "food": "Мороженое 🍦", "desc": "Зачаровать 1 предмет"},
 ]
 
 CLAN_EMOJIS = ["🦭", "🐋", "🦈", "🐙", "🦀", "🦐", "🦑", "🐬", "🐳", "🐢"]
@@ -530,7 +541,7 @@ def get_sell_price(item_name):
     if item_name in SHOP_ITEMS: return int(SHOP_ITEMS[item_name]["price"] * 0.5)
     if item_name in RESOURCE_SELL_PRICES: return RESOURCE_SELL_PRICES[item_name]
     if item_name in POTION_SELL_PRICES: return POTION_SELL_PRICES[item_name]
-    m = re.search(r'$$([A-Z])$$', item_name)  # ИСПРАВЛЕНО: правильный regex
+    m = re.search(r'$$([A-Z])$$', item_name)
     if m and m.group(1) in RARITY_SELL_PRICES:
         return RARITY_SELL_PRICES[m.group(1)]
     for recipe in CRAFT_RECIPES:
@@ -882,8 +893,10 @@ def generate_daily_quests(uid):
     if c.fetchall(): conn.close(); return
     c.execute("DELETE FROM daily_quests WHERE user_id=? AND date!=?", (uid, today))
     for q in random.sample(QUEST_TEMPLATES, 3):
-        c.execute("INSERT INTO daily_quests (user_id,quest_type,quest_target,quest_progress,quest_reward,date,claimed) VALUES (?,?,?,0,?,?,0)",
-                  (uid, q["type"], q["target"], q["reward"], today))
+        exp_r = q.get("exp", 0)
+        food_r = q.get("food", None)
+        c.execute("INSERT INTO daily_quests (user_id,quest_type,quest_target,quest_progress,quest_reward,date,claimed,exp_reward,food_reward) VALUES (?,?,?,0,?,?,0,?,?)",
+                  (uid, q["type"], q["target"], q["reward"], today, exp_r, food_r))
     conn.commit(); conn.close()
 
 def update_quest_progress(uid, qt, amt=1):
@@ -1019,7 +1032,8 @@ def cmd_help(message):
          "*Зелья:* 9 видов (лечение, сила, защита, ярость и др.)\n"
          "*Зачарование:* 6 видов (огненное, ледяное, теневое и др.)\n"
          "*Регенерация:* +25 HP/час | Навык каждые 5 уровней\n"
-         "*Тюленята:* растут через 3 дня")
+         "*Тюленята:* растут через 3 дня\n"
+         "*Награды за задания:* рыбнетки + опыт + иногда еда")
     bot.send_message(chat_id, t, parse_mode='Markdown'); show_main_menu(chat_id)
 
 def show_main_menu(chat_id):
@@ -2037,22 +2051,9 @@ def duel_seal(call):
     csk = get_seal_skills(csid); osk = get_seal_skills(osid)
     cps, cpd, cpdd, cprg, cpsp, cptn = get_active_potion_mods(csid)
     ops, opd, opdd, oprg, opsp, optn = get_active_potion_mods(osid)
-    chp = min(cseal[3], ceh)
-    ohp = min(oseal[3], oeh)
+    chp = min(cseal[3], ceh); ohp = min(oseal[3], oeh)
     log = [f"🤺 *Дуэль: {cseal[2]} vs {oseal[2]}*\n",
            f"{cseal[2]}: ❤️{cseal[3]}/{ceh} 💪{ces} 🛡️{ced}", f"{oseal[2]}: ❤️{oseal[3]}/{oeh} 💪{oes} 🛡️{oed}\n"]
-    if cps or cpd or cptn:
-        parts = []
-        if cps: parts.append(f"+{cps}💪")
-        if cpd: parts.append(f"+{cpd}🛡️")
-        if cptn: parts.append(f"+{int(cptn*100)}% урон 😤")
-        log.append(f"🧪 {cseal[2]}: {' '.join(parts)}")
-    if ops or opd or optn:
-        parts = []
-        if ops: parts.append(f"+{ops}💪")
-        if opd: parts.append(f"+{opd}🛡️")
-        if optn: parts.append(f"+{int(optn*100)}% урон 😤")
-        log.append(f"🧪 {oseal[2]}: {' '.join(parts)}")
     rnd = 0; rw = 0
     while chp > 0 and ohp > 0:
         rnd += 1
@@ -2541,7 +2542,7 @@ def marry_do(call):
     else: msg += "Нет тюленёнка..."
     bot.edit_message_text(msg, call.message.chat.id, call.message.message_id, parse_mode='Markdown')
 
-# ==================== ЕЖЕДНЕВНЫЕ ЗАДАНИЯ ====================
+# ==================== ЕЖЕДНЕВНЫЕ ЗАДАНИЯ (ОБНОВЛЁННЫЕ) ====================
 def show_quests(uid, chat_id, message_id=None):
     try: generate_daily_quests(uid); quests = get_daily_quests(uid)
     except Exception as e: bot.send_message(chat_id, f"⚠️ Ошибка БД: {e}"); return
@@ -2550,12 +2551,18 @@ def show_quests(uid, chat_id, message_id=None):
     qd = {q["type"]: q["desc"] for q in QUEST_TEMPLATES}
     for q in quests:
         qid, qt, qtgt, qprog, qrew, cl = q[0], q[2], q[3], q[4], q[5], q[7]
+        exp_r = q[8] if len(q) > 8 else 0
+        food_r = q[9] if len(q) > 9 else None
         d = qd.get(qt, qt); s = f"{qprog}/{qtgt}"
-        if cl: t += f"  ✅ {d} — {s} (🐟{qrew}) — получено\n"
+        reward_parts = [f"🐟{qrew}"]
+        if exp_r: reward_parts.append(f"📈{exp_r}оп")
+        if food_r: reward_parts.append(f"🍴{food_r}")
+        reward_str = " + ".join(reward_parts)
+        if cl: t += f"  ✅ {d} — {s} ({reward_str}) — получено\n"
         elif qprog >= qtgt:
-            t += f"  🎁 {d} — {s} (🐟{qrew}) — готово!\n"
-            m.add(types.InlineKeyboardButton(f"Забрать 🐟{qrew}", callback_data=f"qclaim_{qid}"))
-        else: t += f"  ⬜ {d} — {s} (🐟{qrew})\n"
+            t += f"  🎁 {d} — {s} ({reward_str}) — готово!\n"
+            m.add(types.InlineKeyboardButton(f"Забрать {reward_str}", callback_data=f"qclaim_{qid}"))
+        else: t += f"  ⬜ {d} — {s} ({reward_str})\n"
     if m.keyboard:
         if message_id:
             try: bot.edit_message_text(t, chat_id, message_id, parse_mode='Markdown', reply_markup=m)
@@ -2576,12 +2583,24 @@ def menu_quests(message):
 def quest_claim(call):
     uid = call.from_user.id; qid = int(call.data.split("_")[1])
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT quest_id,quest_target,quest_progress,quest_reward,claimed FROM daily_quests WHERE quest_id=? AND claimed=0", (qid,)); r = c.fetchone()
+    c.execute("SELECT quest_id,quest_target,quest_progress,quest_reward,claimed,exp_reward,food_reward FROM daily_quests WHERE quest_id=? AND claimed=0", (qid,)); r = c.fetchone()
     if not r: bot.answer_callback_query(call.id, "Уже получено!"); conn.close(); return
-    qid_db, qtgt, qprog, qrew, cl = r
+    qid_db, qtgt, qprog, qrew, cl, exp_r, food_r = r
     if qprog < qtgt: bot.answer_callback_query(call.id, "Не выполнено!"); conn.close(); return
     c.execute("UPDATE daily_quests SET claimed=1 WHERE quest_id=?", (qid,)); conn.commit(); conn.close()
-    add_fishnets(uid, qrew); bot.answer_callback_query(call.id, f"Получено 🐟{qrew}!")
+    add_fishnets(uid, qrew)
+    reward_msg = f"🐟{qrew}"
+    if exp_r and exp_r > 0:
+        seals = get_player_seals(uid)
+        for s in seals:
+            if s[11] == 0:
+                update_seal(s[0], exp=s[10]+exp_r)
+                check_levelup(s[0])
+        reward_msg += f", 📈+{exp_r}оп"
+    if food_r:
+        add_to_inv(uid, food_r, "food", 1)
+        reward_msg += f", 🍴{food_r}"
+    bot.answer_callback_query(call.id, f"Получено: {reward_msg}!")
     show_quests(uid, call.message.chat.id, call.message.message_id)
 
 # ==================== ПРИВЯЗКА К ТОПИКУ ====================
