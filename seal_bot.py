@@ -2344,7 +2344,7 @@ def clan_dng_atk(call):
         dmg = max(1, ts - mon["def"] + random.randint(-5, 10)); mon["hp"] -= dmg
         log.append(f"Тюлени →{dmg} (монстр {max(0, mon['hp'])}❤️)")
         if mon["hp"] <= 0: break
-                dm = max(1, mon["str"] - td + random.randint(-2, 6))
+        dm = max(1, mon["str"] - td + random.randint(-2, 6))
         target = random.choice(all_seals)
         old_hp = seal_hp[target[0]]
         new_hp = max(1, old_hp - dm)
