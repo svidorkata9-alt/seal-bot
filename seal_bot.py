@@ -1889,26 +1889,13 @@ def seal_play(call):
 @bot.callback_query_handler(func=lambda c: c.data.startswith("rename_"))
 def seal_rename(call):
     sid = int(call.data.split("_")[1])
-    user_id = call.from_user.id
-    
-    # Проверка, является ли пользователь владельцем тюленя
-    if get_seal_owner(sid) != user_id:
-        bot.answer_callback_query(call.id, "❌ Вы не владелец этого тюленя!")
-        return
-    
     bot.send_message(call.message.chat.id, "Новое имя:")
-    reg_step(call.message.chat.id, user_id, proc_rename, sid)
+    reg_step(call.message.chat.id, call.from_user.id, proc_rename, sid)
 
 def proc_rename(message, sid):
-    user_id = message.from_user.id
     nn = message.text.strip()
-    
-    # Обновление имени тюленя только для его владельца
-    if get_seal_owner(sid) == user_id:
-        update_seal(sid, name=nn)
-        bot.send_message(message.chat.id, f"✅ Имя тюленя обновлено на {nn}!")
-    else:
-        bot.send_message(message.chat.id, "❌ Вы не владелец этого тюленя!")
+    # ИСПРАВЛЕНО: ограничение длины имени не трогаем
+    update_seal(sid, name=nn); bot.send_message(message.chat.id, f"✅ {nn}!")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("equip_"))
 def seal_equip_menu(call):
