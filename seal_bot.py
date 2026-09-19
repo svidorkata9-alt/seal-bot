@@ -2221,10 +2221,10 @@ def menu_dungeon(message):
     m = types.InlineKeyboardMarkup()
     for s in seals:
         if s[11] == 1: continue
-        m.add(types.InlineKeyboardButton(f"{s[2]} (ур.{s[9]})", callback_data=f"ds_{s[0]}"))
+        m.add(types.InlineKeyboardButton(f"{s[2]} (ур.{s[9]})", callback_data=f"dngmenu_{s[0]}"))
     if not m.keyboard:
         bot.send_message(chat_id, "Все малыши не готовы к бою!"); return
-    bot.send_message(chat_id, "🏰 Выберите тюленя (10 этажей, сундуки!):", reply_markup=m)
+    bot.send_message(chat_id, "🏰 Выберите тюленя:", reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("ds_"))
 def dng_start(call):
