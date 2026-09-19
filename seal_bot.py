@@ -6,8 +6,8 @@ from datetime import datetime, date, timedelta
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "PLACEHOLDER_TOKEN")
 bot = telebot.TeleBot(TOKEN)
 DB_PATH = "/data/seal_life.db"
-BACKUP_DIR = "backups"
-PHOTOS_DIR = "photos"
+BACKUP_DIR = "/data/backups"
+PHOTOS_DIR = "/data/photos"
 MAX_SEALS = 5
 FISHING_COOLDOWN_MIN = 10
 MAX_CLAN_MEMBERS = 20
@@ -145,6 +145,7 @@ def migration_8(c):
 MIGRATIONS = [migration_1, migration_2, migration_3, migration_4, migration_5, migration_6, migration_7, migration_8]
 
 def run_migrations():
+    os.makedirs(PHOTOS_DIR, exist_ok=True)
     backup_db()
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -154,7 +155,6 @@ def run_migrations():
     set_db_version(conn, len(MIGRATIONS))
     conn.commit()
     conn.close()
-
 # ==================== КОНСТАНТЫ ====================
 SHOP_ITEMS = {
     "Апельсин 🍊": {"price": 15, "type": "food", "satiety": 25, "mood": 10},
@@ -178,29 +178,43 @@ SHOP_ITEMS = {
 }
 
 ITEM_BONUSES = {
+    # ===== Оружие =====
     "Костяной меч 🗡️": {"str": 5}, "Акулий клык 🦷": {"str": 8}, "Трезубец 🔱": {"str": 12}, "Китовый клинок 🐋": {"str": 15},
     "Ядовитый клинок ☠️": {"str": 10}, "Ядовитый дротик 🎯": {"str": 7},
+    # ===== Броня (оригинальная) =====
     "Чешуйчатая броня 🐟": {"def": 5, "hp": 10}, "Панцирь краба 🦀": {"def": 8, "hp": 15},
     "Плетёная броня 🧵": {"def": 10, "hp": 25}, "Кракеновый панцирь 🐙": {"def": 15, "hp": 40},
-    "Шлем из ракушек 🐚": {"def": 3, "hp": 10}, "Костяной шлем 💀": {"def": 5, "hp": 15}, "Корона из зубов 👑": {"def": 8, "hp": 20},
-    "Ядовитый шлем ☠️": {"def": 4, "hp": 12},
-    "Щит из чешуи 🐠": {"def": 5}, "Панцирный щит 🛡️": {"def": 8}, "Щит кракена 🦑": {"def": 12}, "Ядовитый щит ☠️": {"def": 7},
-    "Ледяной клинок ❄️": {"str": 18}, "Огненный меч 🔥": {"str": 20}, "Коралловый меч 🪸": {"str": 16},
+    # ===== Броня (новая) =====
+    "Коралловый панцирь 🪸": {"def": 6, "hp": 12}, "Ракушечная броня 🐚": {"def": 7, "hp": 10},
+    "Янтарная броня 🟡": {"def": 14, "hp": 40}, "Рубиновый нагрудник 🔴": {"def": 13, "hp": 45},
+    "Изумрудный панцирь 💚": {"def": 15, "hp": 42}, "Кристальный доспех 💎": {"def": 20, "hp": 55},
+    "Грозовая броня ⚡": {"def": 19, "hp": 60}, "Костяной доспех титана 🦴": {"def": 26, "hp": 90},
+    "Янтарный панцирь дракона 🟡": {"def": 25, "hp": 95}, "Изумрудная броня богов 💚": {"def": 48, "hp": 190},
+    # ===== Брони высоких тиров (оригинальные) =====
     "Ледяная броня ❄️": {"def": 18, "hp": 50}, "Огненная броня 🔥": {"def": 16, "hp": 55},
-    "Морозный шлем 🧊": {"def": 10, "hp": 30}, "Пламенный шлем 🔥": {"def": 12, "hp": 25},
-    "Ледяной щит ❄️": {"def": 15}, "Щит пламени 🔥": {"def": 16},
-    "Молниевый клинок ⚡": {"str": 25}, "Призрачный меч 👻": {"str": 28}, "Кристальный клинок 💎": {"str": 22},
     "Молниевая броня ⚡": {"def": 22, "hp": 70}, "Призрачная броня 👻": {"def": 24, "hp": 65},
-    "Громовой шлем ⚡": {"def": 15, "hp": 45}, "Призрачный шлем 👻": {"def": 16, "hp": 40},
-    "Щит молний ⚡": {"def": 20}, "Призрачный щит 👻": {"def": 22},
-    "Клинок дракона 🐉": {"str": 35}, "Буревой топор 🌪️": {"str": 38},
     "Драконья броня 🐉": {"def": 30, "hp": 100}, "Буревая броня 🌪️": {"def": 28, "hp": 110},
-    "Драконий шлем 🐉": {"def": 20, "hp": 60}, "Шлем бури 🌪️": {"def": 18, "hp": 65},
-    "Драконий щит 🐉": {"def": 28}, "Щит бури 🌪️": {"def": 26},
-    "Меч Богов ⚔️": {"str": 50}, "Клинок Бездны 🌑": {"str": 55},
     "Броня Богов 🛡️": {"def": 45, "hp": 200}, "Броня Бездны 🌑": {"def": 50, "hp": 180},
+    # ===== Шлемы (оригинальные) =====
+    "Шлем из ракушек 🐚": {"def": 3, "hp": 10}, "Костяной шлем 💀": {"def": 5, "hp": 15}, "Корона из зубов 👑": {"def": 8, "hp": 20},
+    "Ядовитый шлем ☠️": {"def": 4, "hp": 12}, "Морозный шлем 🧊": {"def": 10, "hp": 30}, "Пламенный шлем 🔥": {"def": 12, "hp": 25},
+    "Громовой шлем ⚡": {"def": 15, "hp": 45}, "Призрачный шлем 👻": {"def": 16, "hp": 40},
+    "Драконий шлем 🐉": {"def": 20, "hp": 60}, "Шлем бури 🌪️": {"def": 18, "hp": 65},
     "Шлем Богов 👑": {"def": 30, "hp": 120}, "Шлем Бездны 🌑": {"def": 32, "hp": 110},
-    "Щит Богов 🛡️": {"def": 40}, "Щит Бездны 🌑": {"def": 42},
+    # ===== Шлемы (новые) =====
+    "Янтарный шлем 🟡": {"def": 8, "hp": 22}, "Костяной шлем титана 🦴": {"def": 14, "hp": 50},
+    "Рубиновый шлем Бездны 🔴": {"def": 22, "hp": 100},
+    # ===== Щиты (оригинальные) =====
+    "Щит из чешуи 🐠": {"def": 5}, "Панцирный щит 🛡️": {"def": 8}, "Щит кракена 🦑": {"def": 12}, "Ядовитый щит ☠️": {"def": 7},
+    "Ледяной щит ❄️": {"def": 15}, "Щит пламени 🔥": {"def": 16}, "Щит молний ⚡": {"def": 20}, "Призрачный щит 👻": {"def": 22},
+    "Драконий щит 🐉": {"def": 28}, "Щит бури 🌪️": {"def": 26}, "Щит Богов 🛡️": {"def": 40}, "Щит Бездны 🌑": {"def": 42},
+    # ===== Щиты (новые) =====
+    "Изумрудный щит 💚": {"def": 18}, "Рубиновый щит 🔴": {"def": 25},
+    # ===== Оружие высоких тиров =====
+    "Ледяной клинок ❄️": {"str": 18}, "Огненный меч 🔥": {"str": 20}, "Коралловый меч 🪸": {"str": 16},
+    "Молниевый клинок ⚡": {"str": 25}, "Призрачный меч 👻": {"str": 28}, "Кристальный клинок 💎": {"str": 22},
+    "Клинок дракона 🐉": {"str": 35}, "Буревой топор 🌪️": {"str": 38},
+    "Меч Богов ⚔️": {"str": 50}, "Клинок Бездны 🌑": {"str": 55},
 }
 
 ACCESSORY_BONUSES = {
@@ -214,58 +228,94 @@ CRAFT_TIER_MULT = {"common": 1.0, "uncommon": 1.3, "rare": 1.6, "epic": 2.0, "le
 CRAFT_TIER_LABEL = {"common": "Обычный", "uncommon": "Необычный", "rare": "Редкий", "epic": "Эпический", "legendary": "Легендарный"}
 
 CRAFT_RECIPES = [
+    # ===== Оружие common =====
     {"name": "Костяной меч 🗡️", "type": "weapon", "tier": "common", "resources": {"Акулий зуб 🦈": 3}},
     {"name": "Акулий клык 🦷", "type": "weapon", "tier": "common", "resources": {"Акулий зуб 🦈": 5, "Чешуя 🐟": 2}},
     {"name": "Трезубец 🔱", "type": "weapon", "tier": "common", "resources": {"Щупальце 🐙": 4, "Акулий зуб 🦈": 3}},
     {"name": "Китовый клинок 🐋", "type": "weapon", "tier": "common", "resources": {"Китовый ус 🐋": 3, "Жемчуг 🫧": 1}},
     {"name": "Ядовитый клинок ☠️", "type": "weapon", "tier": "common", "resources": {"Жало 🐡": 3, "Акулий зуб 🦈": 2}},
     {"name": "Ядовитый дротик 🎯", "type": "weapon", "tier": "common", "resources": {"Жало 🐡": 2, "Чешуя 🐟": 3}},
+    # ===== Броня common =====
     {"name": "Чешуйчатая броня 🐟", "type": "armor", "tier": "common", "resources": {"Чешуя 🐟": 4}},
     {"name": "Панцирь краба 🦀", "type": "armor", "tier": "common", "resources": {"Панцирь 🦀": 3}},
     {"name": "Плетёная броня 🧵", "type": "armor", "tier": "common", "resources": {"Щупальце 🐙": 3, "Чешуя 🐟": 2}},
     {"name": "Кракеновый панцирь 🐙", "type": "armor", "tier": "common", "resources": {"Щупальце 🐙": 5, "Жемчуг 🫧": 1}},
+    {"name": "Коралловый панцирь 🪸", "type": "armor", "tier": "common", "resources": {"Коралл 🪸": 4, "Панцирь 🦀": 1}},
+    {"name": "Ракушечная броня 🐚", "type": "armor", "tier": "common", "resources": {"Панцирь 🦀": 3, "Чешуя 🐟": 2, "Костяной порошок 🦴": 2}},
+    # ===== Шлемы common =====
     {"name": "Шлем из ракушек 🐚", "type": "helmet", "tier": "common", "resources": {"Панцирь 🦀": 3, "Чешуя 🐟": 1}},
     {"name": "Костяной шлем 💀", "type": "helmet", "tier": "common", "resources": {"Акулий зуб 🦈": 3}},
     {"name": "Корона из зубов 👑", "type": "helmet", "tier": "common", "resources": {"Акулий зуб 🦈": 5, "Жемчуг 🫧": 1}},
     {"name": "Ядовитый шлем ☠️", "type": "helmet", "tier": "common", "resources": {"Жало 🐡": 3, "Чешуя 🐟": 2}},
+    # ===== Щиты common =====
     {"name": "Щит из чешуи 🐠", "type": "shield", "tier": "common", "resources": {"Чешуя 🐟": 4, "Панцирь 🦀": 1}},
     {"name": "Панцирный щит 🛡️", "type": "shield", "tier": "common", "resources": {"Панцирь 🦀": 4}},
     {"name": "Щит кракена 🦑", "type": "shield", "tier": "common", "resources": {"Щупальце 🐙": 3, "Панцирь 🦀": 2}},
     {"name": "Ядовитый щит ☠️", "type": "shield", "tier": "common", "resources": {"Жало 🐡": 4, "Панцирь 🦀": 2}},
+    # ===== Оружие uncommon =====
     {"name": "Коралловый меч 🪸", "type": "weapon", "tier": "uncommon", "resources": {"Коралл 🪸": 4, "Акулий зуб 🦈": 2}},
     {"name": "Ледяной клинок ❄️", "type": "weapon", "tier": "uncommon", "resources": {"Ледяной кристалл 🧊": 3, "Чешуя 🐟": 3}},
     {"name": "Огненный меч 🔥", "type": "weapon", "tier": "uncommon", "resources": {"Огненный камень 🔥": 3, "Акулий зуб 🦈": 3}},
+    # ===== Броня uncommon (новая + оригинальная) =====
     {"name": "Ледяная броня ❄️", "type": "armor", "tier": "uncommon", "resources": {"Ледяной кристалл 🧊": 4, "Панцирь 🦀": 2}},
     {"name": "Огненная броня 🔥", "type": "armor", "tier": "uncommon", "resources": {"Огненный камень 🔥": 4, "Чешуя 🐟": 3}},
+    {"name": "Янтарная броня 🟡", "type": "armor", "tier": "uncommon", "resources": {"Янтарная смола 🟡": 4, "Панцирь 🦀": 2}},
+    {"name": "Рубиновый нагрудник 🔴", "type": "armor", "tier": "uncommon", "resources": {"Рубин 🔴": 2, "Чешуя 🐟": 3, "Огненный камень 🔥": 2}},
+    {"name": "Изумрудный панцирь 💚", "type": "armor", "tier": "uncommon", "resources": {"Изумруд 💚": 2, "Панцирь 🦀": 3, "Ледяной кристалл 🧊": 2}},
+    # ===== Шлемы uncommon =====
     {"name": "Морозный шлем 🧊", "type": "helmet", "tier": "uncommon", "resources": {"Ледяной кристалл 🧊": 3, "Панцирь 🦀": 2}},
     {"name": "Пламенный шлем 🔥", "type": "helmet", "tier": "uncommon", "resources": {"Огненный камень 🔥": 3, "Акулий зуб 🦈": 2}},
+    {"name": "Янтарный шлем 🟡", "type": "helmet", "tier": "uncommon", "resources": {"Янтарная смола 🟡": 3, "Костяной порошок 🦴": 2}},
+    # ===== Щиты uncommon =====
     {"name": "Ледяной щит ❄️", "type": "shield", "tier": "uncommon", "resources": {"Ледяной кристалл 🧊": 3, "Панцирь 🦀": 2}},
     {"name": "Щит пламени 🔥", "type": "shield", "tier": "uncommon", "resources": {"Огненный камень 🔥": 3, "Панцирь 🦀": 2}},
+    # ===== Оружие rare =====
     {"name": "Кристальный клинок 💎", "type": "weapon", "tier": "rare", "resources": {"Кристальный осколок 💎": 4, "Коралл 🪸": 2}},
     {"name": "Молниевый клинок ⚡", "type": "weapon", "tier": "rare", "resources": {"Грозовой камень ⚡": 4, "Ледяной кристалл 🧊": 2}},
     {"name": "Призрачный меч 👻", "type": "weapon", "tier": "rare", "resources": {"Призрачная эссенция 👻": 4, "Огненный камень 🔥": 2}},
+    # ===== Броня rare =====
     {"name": "Молниевая броня ⚡", "type": "armor", "tier": "rare", "resources": {"Грозовой камень ⚡": 5, "Ледяной кристалл 🧊": 3}},
     {"name": "Призрачная броня 👻", "type": "armor", "tier": "rare", "resources": {"Призрачная эссенция 👻": 5, "Огненный камень 🔥": 3}},
+    {"name": "Кристальный доспех 💎", "type": "armor", "tier": "rare", "resources": {"Кристальный осколок 💎": 5, "Коралл 🪸": 3}},
+    {"name": "Грозовая броня ⚡", "type": "armor", "tier": "rare", "resources": {"Грозовой камень ⚡": 4, "Морской глаз 👁️": 2}},
+    # ===== Шлемы rare =====
     {"name": "Громовой шлем ⚡", "type": "helmet", "tier": "rare", "resources": {"Грозовой камень ⚡": 3, "Кристальный осколок 💎": 1}},
     {"name": "Призрачный шлем 👻", "type": "helmet", "tier": "rare", "resources": {"Призрачная эссенция 👻": 3, "Кристальный осколок 💎": 1}},
+    # ===== Щиты rare =====
     {"name": "Щит молний ⚡", "type": "shield", "tier": "rare", "resources": {"Грозовой камень ⚡": 3, "Панцирь 🦀": 3}},
     {"name": "Призрачный щит 👻", "type": "shield", "tier": "rare", "resources": {"Призрачная эссенция 👻": 3, "Панцирь 🦀": 3}},
+    {"name": "Изумрудный щит 💚", "type": "shield", "tier": "rare", "resources": {"Изумруд 💚": 2, "Кристальный осколок 💎": 2, "Панцирь 🦀": 2}},
+    # ===== Оружие epic =====
     {"name": "Клинок дракона 🐉", "type": "weapon", "tier": "epic", "resources": {"Драконья чешуя 🐉": 5, "Грозовой камень ⚡": 3}},
     {"name": "Буревой топор 🌪️", "type": "weapon", "tier": "epic", "resources": {"Драконья чешуя 🐉": 5, "Огненный камень 🔥": 3}},
+    # ===== Броня epic =====
     {"name": "Драконья броня 🐉", "type": "armor", "tier": "epic", "resources": {"Драконья чешуя 🐉": 6, "Кристальный осколок 💎": 3}},
     {"name": "Буревая броня 🌪️", "type": "armor", "tier": "epic", "resources": {"Драконья чешуя 🐉": 6, "Грозовой камень ⚡": 3}},
+    {"name": "Костяной доспех титана 🦴", "type": "armor", "tier": "epic", "resources": {"Драконья чешуя 🐉": 4, "Костяной порошок 🦴": 5, "Кровь кракена 🩸": 2}},
+    {"name": "Янтарный панцирь дракона 🟡", "type": "armor", "tier": "epic", "resources": {"Драконья чешуя 🐉": 4, "Янтарная смола 🟡": 5, "Морской глаз 👁️": 2}},
+    # ===== Шлемы epic =====
     {"name": "Драконий шлем 🐉", "type": "helmet", "tier": "epic", "resources": {"Драконья чешуя 🐉": 4, "Кровь кракена 🩸": 2}},
     {"name": "Шлем бури 🌪️", "type": "helmet", "tier": "epic", "resources": {"Драконья чешуя 🐉": 4, "Тёмная эссенция 🌑": 2}},
+    {"name": "Костяной шлем титана 🦴", "type": "helmet", "tier": "epic", "resources": {"Драконья чешуя 🐉": 3, "Костяной порошок 🦴": 4, "Кровь кракена 🩸": 1}},
+    # ===== Щиты epic =====
     {"name": "Драконий щит 🐉", "type": "shield", "tier": "epic", "resources": {"Драконья чешуя 🐉": 4, "Кровь кракена 🩸": 2}},
     {"name": "Щит бури 🌪️", "type": "shield", "tier": "epic", "resources": {"Драконья чешуя 🐉": 4, "Тёмная эссенция 🌑": 2}},
+    {"name": "Рубиновый щит 🔴", "type": "shield", "tier": "epic", "resources": {"Рубин 🔴": 3, "Драконья чешуя 🐉": 3, "Огненный камень 🔥": 2}},
+    # ===== Оружие legendary =====
     {"name": "Меч Богов ⚔️", "type": "weapon", "tier": "legendary", "resources": {"Слеза Посейдона 💧": 2, "Драконья чешуя 🐉": 5}},
     {"name": "Клинок Бездны 🌑", "type": "weapon", "tier": "legendary", "resources": {"Слеза Посейдона 💧": 2, "Тёмная эссенция 🌑": 5}},
+    # ===== Броня legendary =====
     {"name": "Броня Богов 🛡️", "type": "armor", "tier": "legendary", "resources": {"Слеза Посейдона 💧": 3, "Драконья чешуя 🐉": 5}},
     {"name": "Броня Бездны 🌑", "type": "armor", "tier": "legendary", "resources": {"Слеза Посейдона 💧": 3, "Тёмная эссенция 🌑": 5}},
+    {"name": "Изумрудная броня богов 💚", "type": "armor", "tier": "legendary", "resources": {"Слеза Посейдона 💧": 2, "Изумруд 💚": 3, "Драконья чешуя 🐉": 4}},
+    # ===== Шлемы legendary =====
     {"name": "Шлем Богов 👑", "type": "helmet", "tier": "legendary", "resources": {"Слеза Посейдона 💧": 2, "Кровь кракена 🩸": 3}},
     {"name": "Шлем Бездны 🌑", "type": "helmet", "tier": "legendary", "resources": {"Слеза Посейдона 💧": 2, "Тёмная эссенция 🌑": 3}},
+    {"name": "Рубиновый шлем Бездны 🔴", "type": "helmet", "tier": "legendary", "resources": {"Слеза Посейдона 💧": 2, "Рубин 🔴": 3, "Тёмная эссенция 🌑": 2}},
+    # ===== Щиты legendary =====
     {"name": "Щит Богов 🛡️", "type": "shield", "tier": "legendary", "resources": {"Слеза Посейдона 💧": 2, "Кровь кракена 🩸": 3}},
     {"name": "Щит Бездны 🌑", "type": "shield", "tier": "legendary", "resources": {"Слеза Посейдона 💧": 2, "Тёмная эссенция 🌑": 3}},
+    # ===== Зелья =====
     {"name": "Зелье лечения 💚", "type": "potion", "tier": "common", "resources": {"Водоросли 🌿": 3, "Пустая колба 🧪": 1}, "effect": "heal", "value": 40},
     {"name": "Зелье силы 💪", "type": "potion", "tier": "common", "resources": {"Акулий зуб 🦈": 2, "Пустая колба 🧪": 1}, "effect": "str_boost", "value": 10, "duration": 5},
     {"name": "Зелье защиты 🛡️", "type": "potion", "tier": "common", "resources": {"Панцирь 🦀": 2, "Пустая колба 🧪": 1}, "effect": "def_boost", "value": 10, "duration": 5},
@@ -284,6 +334,8 @@ ENCHANTMENTS = {
     "Кристальное зачарование 💎": {"bonus_str": 4, "bonus_def": 2, "cost": {"Кристальный осколок 💎": 3}},
     "Кровавое зачарование 🩸": {"bonus_str": 6, "bonus_def": 0, "cost": {"Кровь кракена 🩸": 2, "Жало 🐡": 2}},
     "Древнее зачарование 📜": {"bonus_str": 8, "bonus_def": 4, "cost": {"Слеза Посейдона 💧": 1, "Кристальный осколок 💎": 2}},
+    "Янтарное зачарование 🟡": {"bonus_str": 5, "bonus_def": 3, "cost": {"Янтарная смола 🟡": 3}},
+    "Изумрудное зачарование 💚": {"bonus_str": 3, "bonus_def": 6, "cost": {"Изумруд 💚": 2, "Морской глаз 👁️": 1}},
 }
 
 POTION_EFFECTS = {
@@ -334,6 +386,8 @@ RESOURCE_SELL_PRICES = {
     "Грозовой камень ⚡": 30, "Кристальный осколок 💎": 35, "Призрачная эссенция 👻": 35,
     "Драконья чешуя 🐉": 60, "Кровь кракена 🩸": 50, "Тёмная эссенция 🌑": 55,
     "Слеза Посейдона 💧": 120, "Карта сокровищ 🗺️": 40,
+    # Новые ресурсы
+    "Морской глаз 👁️": 40, "Костяной порошок 🦴": 12, "Янтарная смола 🟡": 45, "Рубин 🔴": 80, "Изумруд 💚": 85,
 }
 
 POTION_SELL_PRICES = {
@@ -344,46 +398,46 @@ POTION_SELL_PRICES = {
 
 RARITY_SELL_PRICES = {"F": 15, "E": 35, "D": 75, "C": 150, "B": 350, "A": 700, "S": 1500}
 
-# ===== Лёгкое подземелье (текущее) =====
+# ===== Лёгкое подземелье (усиленное) =====
 DUNGEON_FLOORS_EASY = [
-    {"monsters": 2, "chest_rarity": "F", "hp_mult": 1.0, "str_mult": 1.0},
-    {"monsters": 2, "chest_rarity": "F", "hp_mult": 1.3, "str_mult": 1.2},
-    {"monsters": 3, "chest_rarity": "E", "hp_mult": 1.6, "str_mult": 1.4},
-    {"monsters": 3, "chest_rarity": "D", "hp_mult": 2.0, "str_mult": 1.6},
-    {"monsters": 3, "chest_rarity": "C", "hp_mult": 2.5, "str_mult": 1.8},
-    {"monsters": 4, "chest_rarity": "C", "hp_mult": 3.0, "str_mult": 2.0},
-    {"monsters": 4, "chest_rarity": "B", "hp_mult": 3.5, "str_mult": 2.2},
-    {"monsters": 4, "chest_rarity": "A", "hp_mult": 4.0, "str_mult": 2.5},
-    {"monsters": 5, "chest_rarity": "A", "hp_mult": 5.0, "str_mult": 3.0},
-    {"monsters": 5, "chest_rarity": "S", "hp_mult": 6.0, "str_mult": 3.5},
+    {"monsters": 2, "chest_rarity": "F", "hp_mult": 1.2, "str_mult": 1.1, "def_mult": 1.0},
+    {"monsters": 2, "chest_rarity": "F", "hp_mult": 1.6, "str_mult": 1.3, "def_mult": 1.1},
+    {"monsters": 3, "chest_rarity": "E", "hp_mult": 2.0, "str_mult": 1.5, "def_mult": 1.2},
+    {"monsters": 3, "chest_rarity": "D", "hp_mult": 2.5, "str_mult": 1.8, "def_mult": 1.4},
+    {"monsters": 3, "chest_rarity": "C", "hp_mult": 3.2, "str_mult": 2.0, "def_mult": 1.5},
+    {"monsters": 4, "chest_rarity": "C", "hp_mult": 4.0, "str_mult": 2.3, "def_mult": 1.7},
+    {"monsters": 4, "chest_rarity": "B", "hp_mult": 4.8, "str_mult": 2.6, "def_mult": 1.9},
+    {"monsters": 4, "chest_rarity": "A", "hp_mult": 5.5, "str_mult": 3.0, "def_mult": 2.2},
+    {"monsters": 5, "chest_rarity": "A", "hp_mult": 7.0, "str_mult": 3.5, "def_mult": 2.5},
+    {"monsters": 5, "chest_rarity": "S", "hp_mult": 8.5, "str_mult": 4.0, "def_mult": 3.0},
 ]
 
-# ===== Среднее подземелье =====
+# ===== Среднее подземелье (усиленное) =====
 DUNGEON_FLOORS_NORMAL = [
-    {"monsters": 3, "chest_rarity": "E", "hp_mult": 2.0, "str_mult": 1.5},
-    {"monsters": 3, "chest_rarity": "D", "hp_mult": 2.5, "str_mult": 1.8},
-    {"monsters": 3, "chest_rarity": "D", "hp_mult": 3.0, "str_mult": 2.0},
-    {"monsters": 4, "chest_rarity": "C", "hp_mult": 3.5, "str_mult": 2.2},
-    {"monsters": 4, "chest_rarity": "C", "hp_mult": 4.0, "str_mult": 2.5},
-    {"monsters": 4, "chest_rarity": "B", "hp_mult": 5.0, "str_mult": 2.8},
-    {"monsters": 5, "chest_rarity": "B", "hp_mult": 6.0, "str_mult": 3.2},
-    {"monsters": 5, "chest_rarity": "A", "hp_mult": 7.0, "str_mult": 3.5},
-    {"monsters": 6, "chest_rarity": "A", "hp_mult": 8.0, "str_mult": 4.0},
-    {"monsters": 6, "chest_rarity": "S", "hp_mult": 10.0, "str_mult": 4.5},
+    {"monsters": 3, "chest_rarity": "E", "hp_mult": 2.5, "str_mult": 1.7, "def_mult": 1.3},
+    {"monsters": 3, "chest_rarity": "D", "hp_mult": 3.0, "str_mult": 2.0, "def_mult": 1.5},
+    {"monsters": 3, "chest_rarity": "D", "hp_mult": 3.8, "str_mult": 2.3, "def_mult": 1.7},
+    {"monsters": 4, "chest_rarity": "C", "hp_mult": 4.5, "str_mult": 2.6, "def_mult": 1.9},
+    {"monsters": 4, "chest_rarity": "C", "hp_mult": 5.2, "str_mult": 2.9, "def_mult": 2.1},
+    {"monsters": 4, "chest_rarity": "B", "hp_mult": 6.5, "str_mult": 3.3, "def_mult": 2.4},
+    {"monsters": 5, "chest_rarity": "B", "hp_mult": 7.8, "str_mult": 3.7, "def_mult": 2.7},
+    {"monsters": 5, "chest_rarity": "A", "hp_mult": 9.5, "str_mult": 4.2, "def_mult": 3.1},
+    {"monsters": 6, "chest_rarity": "A", "hp_mult": 11.0, "str_mult": 4.8, "def_mult": 3.6},
+    {"monsters": 6, "chest_rarity": "S", "hp_mult": 14.0, "str_mult": 5.5, "def_mult": 4.2},
 ]
 
-# ===== Сложное подземелье =====
+# ===== Сложное подземелье (усиленное) =====
 DUNGEON_FLOORS_HARD = [
-    {"monsters": 4, "chest_rarity": "D", "hp_mult": 3.0, "str_mult": 2.0},
-    {"monsters": 4, "chest_rarity": "C", "hp_mult": 4.0, "str_mult": 2.5},
-    {"monsters": 4, "chest_rarity": "C", "hp_mult": 5.0, "str_mult": 2.8},
-    {"monsters": 5, "chest_rarity": "B", "hp_mult": 6.0, "str_mult": 3.0},
-    {"monsters": 5, "chest_rarity": "B", "hp_mult": 7.0, "str_mult": 3.5},
-    {"monsters": 5, "chest_rarity": "A", "hp_mult": 8.0, "str_mult": 4.0},
-    {"monsters": 6, "chest_rarity": "A", "hp_mult": 10.0, "str_mult": 4.5},
-    {"monsters": 6, "chest_rarity": "S", "hp_mult": 12.0, "str_mult": 5.0},
-    {"monsters": 7, "chest_rarity": "S", "hp_mult": 15.0, "str_mult": 5.5},
-    {"monsters": 7, "chest_rarity": "S", "hp_mult": 20.0, "str_mult": 6.5},
+    {"monsters": 4, "chest_rarity": "D", "hp_mult": 4.0, "str_mult": 2.3, "def_mult": 1.7},
+    {"monsters": 4, "chest_rarity": "C", "hp_mult": 5.5, "str_mult": 2.8, "def_mult": 2.0},
+    {"monsters": 4, "chest_rarity": "C", "hp_mult": 6.5, "str_mult": 3.2, "def_mult": 2.3},
+    {"monsters": 5, "chest_rarity": "B", "hp_mult": 8.0, "str_mult": 3.6, "def_mult": 2.7},
+    {"monsters": 5, "chest_rarity": "B", "hp_mult": 9.5, "str_mult": 4.1, "def_mult": 3.1},
+    {"monsters": 5, "chest_rarity": "A", "hp_mult": 11.0, "str_mult": 4.6, "def_mult": 3.5},
+    {"monsters": 6, "chest_rarity": "A", "hp_mult": 13.5, "str_mult": 5.2, "def_mult": 4.0},
+    {"monsters": 6, "chest_rarity": "S", "hp_mult": 16.0, "str_mult": 5.8, "def_mult": 4.5},
+    {"monsters": 7, "chest_rarity": "S", "hp_mult": 20.0, "str_mult": 6.5, "def_mult": 5.2},
+    {"monsters": 7, "chest_rarity": "S", "hp_mult": 26.0, "str_mult": 7.5, "def_mult": 6.0},
 ]
 
 DUNGEON_CONFIGS = {
@@ -392,44 +446,7 @@ DUNGEON_CONFIGS = {
     2: {"name": "💀 Сложное", "floors": DUNGEON_FLOORS_HARD, "min_level": 20, "exp_mult": 2.5},
 }
 DUNGEON_TOTAL_FLOORS = 10
-
-
-# ИСПРАВЛЕНО: корректная сборка ITEM_TYPES с правильным regex
-ITEM_TYPES = {}
-for _n, _i in SHOP_ITEMS.items():
-    ITEM_TYPES[_n] = _i["type"]
-for _r in CRAFT_RECIPES:
-    ITEM_TYPES[_r["name"]] = "potion" if "effect" in _r else _r["type"]
-for _r in "FEDCBAS":
-    ITEM_TYPES[f"Сундук [{_r}] 📦"] = "chest"
-    for _a in ARTIFACTS.get(_r, []):
-        _fn = f"{_a['name']} [{_r}]"
-        ITEM_BONUSES[_fn] = {"str": _a.get("str", 0), "def": _a.get("def", 0), "hp": _a.get("hp", 0)}
-        ITEM_TYPES[_fn] = "artifact"
-    for _w in CHEST_WEAPONS.get(_r, []):
-        _fn = f"{_w['name']} [{_r}]"
-        ITEM_BONUSES[_fn] = {"str": _w.get("str", 0)}
-        ITEM_TYPES[_fn] = "weapon"
-    for _a in CHEST_ARMOR.get(_r, []):
-        _fn = f"{_a['name']} [{_r}]"
-        ITEM_BONUSES[_fn] = {"def": _a.get("def", 0), "hp": _a.get("hp", 0)}
-        ITEM_TYPES[_fn] = "armor"
-ITEM_TYPES.update({"Компас мудреца 🧭": "accessory", "Амулет глубин 🌊": "accessory", "Корона чемпиона 👑": "accessory"})
-for _p in POTION_SELL_PRICES:
-    ITEM_TYPES[_p] = "potion"
-ITEM_TYPES["Карта сокровищ 🗺️"] = "treasure"
-
-SEAL_SKILLS_POOL = [
-    {"name": "Критический удар ⚡", "effect": "crit_15", "desc": "15% шанс двойного урона"},
-    {"name": "Толстая кожа 🛡️", "effect": "dmg_reduce_10", "desc": "-10% получаемого урона"},
-    {"name": "Вампиризм 🩸", "effect": "lifesteal_5", "desc": "Восстанавливает 5% урона"},
-    {"name": "Уклонение 💨", "effect": "dodge_10", "desc": "10% шанс увернуться"},
-    {"name": "Берсерк 😤", "effect": "berserk", "desc": "+50% урона при HP<30%"},
-    {"name": "Регенерация 💚", "effect": "regen", "desc": "+5 HP/час"},
-    {"name": "Шипы 🌵", "effect": "thorns", "desc": "Отражает 20% урона"},
-    {"name": "Двойной удар ⚔️", "effect": "double_strike", "desc": "10% шанс 2 атаки"},
-]
-
+# ==================== МОНСТРЫ И БОССЫ ====================
 DUNGEON_MONSTERS = [
     {"name": "Фугу 🐡", "hp": 30, "str": 8, "def": 3, "drops": {"Жало 🐡": 0.7}},
     {"name": "Креветка-ниндзя 🦐", "hp": 35, "str": 9, "def": 8, "drops": {"Панцирь 🦀": 0.5, "Чешуя 🐟": 0.3}},
@@ -451,6 +468,17 @@ DUNGEON_MONSTERS = [
     {"name": "Кровавый кракен 🩸", "hp": 90, "str": 20, "def": 10, "drops": {"Кровь кракена 🩸": 0.25}},
     {"name": "Теневой змей 🌑", "hp": 80, "str": 19, "def": 11, "drops": {"Тёмная эссенция 🌑": 0.25}},
     {"name": "Глубинный левиафан 🐋", "hp": 130, "str": 24, "def": 14, "drops": {"Слеза Посейдона 💧": 0.05, "Чешуя 🐟": 0.5}},
+    # ===== Новые монстры =====
+    {"name": "Морской глаз 👁️", "hp": 70, "str": 13, "def": 9, "drops": {"Морской глаз 👁️": 0.3, "Чешуя 🐟": 0.4}},
+    {"name": "Костяной страж 🦴", "hp": 95, "str": 17, "def": 13, "drops": {"Костяной порошок 🦴": 0.5, "Акулий зуб 🦈": 0.3}},
+    {"name": "Янтарный голем 🟡", "hp": 110, "str": 18, "def": 15, "drops": {"Янтарная смола 🟡": 0.3, "Коралл 🪸": 0.3}},
+    {"name": "Рубиновый краб 🔴", "hp": 85, "str": 16, "def": 18, "drops": {"Рубин 🔴": 0.15, "Панцирь 🦀": 0.5}},
+    {"name": "Изумрудная медуза 💚", "hp": 75, "str": 14, "def": 12, "drops": {"Изумруд 💚": 0.15, "Жало 🐡": 0.4}},
+    {"name": "Янтарный левиафан 🟡", "hp": 140, "str": 25, "def": 16, "drops": {"Янтарная смола 🟡": 0.2, "Слеза Посейдона 💧": 0.03}},
+    {"name": "Рубиновый голем 🔴", "hp": 120, "str": 22, "def": 20, "drops": {"Рубин 🔴": 0.1, "Огненный камень 🔥": 0.3}},
+    {"name": "Изумрудный страж 💚", "hp": 100, "str": 19, "def": 19, "drops": {"Изумруд 💚": 0.1, "Ледяной кристалл 🧊": 0.3}},
+    {"name": "Костяной кракен 🦴", "hp": 115, "str": 21, "def": 14, "drops": {"Костяной порошок 🦴": 0.4, "Щупальце 🐙": 0.3}},
+    {"name": "Морской фантом 👁️", "hp": 90, "str": 20, "def": 10, "drops": {"Морской глаз 👁️": 0.2, "Призрачная эссенция 👻": 0.2}},
 ]
 
 BOSSES = [
@@ -470,6 +498,12 @@ BOSSES = [
     {"name": "Призрачный король 👻", "drops": {"Призрачная эссенция 👻": 0.5, "Тёмная эссенция 🌑": 0.15}},
     {"name": "Древний кракен 🐙", "drops": {"Кровь кракена 🩸": 0.3, "Жемчуг 🫧": 0.3, "Слеза Посейдона 💧": 0.05}},
     {"name": "Повелитель глубин 🌑", "drops": {"Тёмная эссенция 🌑": 0.3, "Драконья чешуя 🐉": 0.15, "Слеза Посейдона 💧": 0.08}},
+    # ===== Новые боссы =====
+    {"name": "Янтарный титан 🟡", "drops": {"Янтарная смола 🟡": 0.4, "Морской глаз 👁️": 0.2, "Драконья чешуя 🐉": 0.1}},
+    {"name": "Рубиновый левиафан 🔴", "drops": {"Рубин 🔴": 0.25, "Огненный камень 🔥": 0.4, "Кровь кракена 🩸": 0.1}},
+    {"name": "Изумрудный кракен 💚", "drops": {"Изумруд 💚": 0.25, "Ледяной кристалл 🧊": 0.4, "Жемчуг 🫧": 0.2}},
+    {"name": "Костяной дракон 🦴", "drops": {"Костяной порошок 🦴": 0.5, "Драконья чешуя 🐉": 0.15, "Морской глаз 👁️": 0.1}},
+    {"name": "Око бездны 👁️", "drops": {"Морской глаз 👁️": 0.4, "Тёмная эссенция 🌑": 0.3, "Слеза Посейдона 💧": 0.05}},
 ]
 
 CLAN_DUNGEON_MONSTERS = [
@@ -507,12 +541,12 @@ FACTIONS = {
 }
 
 RANDOM_ENCOUNTERS = [
-    {"name": "Сундук на берегу! 📦", "type": "item", "chance": 0.12, "items": ["Чешуя 🐟", "Панцирь 🦀", "Акулий зуб 🦈", "Жемчуг 🫧", "Коралл 🪸", "Ледяной кристалл 🧊"]},
+    {"name": "Сундук на берегу! 📦", "type": "item", "chance": 0.12, "items": ["Чешуя 🐟", "Панцирь 🦀", "Акулий зуб 🦈", "Жемчуг 🫧", "Коралл 🪸", "Ледяной кристалл 🧊", "Костяной порошок 🦴", "Янтарная смола 🟡"]},
     {"name": "Злой краб! 🦀", "type": "battle", "chance": 0.10, "mood_cost": 10, "satiety_cost": 10, "drop": {"Панцирь 🦀": 0.5}},
     {"name": "Дружелюбный дельфин 🐬", "type": "hint", "chance": 0.08, "fishnet_reward": (10, 30)},
     {"name": "Затонувший корабль 🚢", "type": "fishnets", "chance": 0.06, "fishnet_reward": (30, 80)},
-    {"name": "Морская ведьма 🧙‍♀️", "type": "item", "chance": 0.05, "items": ["Тёмная эссенция 🌑", "Кровь кракена 🩸", "Призрачная эссенция 👻"]},
-    {"name": "Драконья пещера 🐉", "type": "item", "chance": 0.03, "items": ["Драконья чешуя 🐉", "Огненный камень 🔥"]},
+    {"name": "Морская ведьма 🧙‍♀️", "type": "item", "chance": 0.05, "items": ["Тёмная эссенция 🌑", "Кровь кракена 🩸", "Призрачная эссенция 👻", "Морской глаз 👁️"]},
+    {"name": "Драконья пещера 🐉", "type": "item", "chance": 0.03, "items": ["Драконья чешуя 🐉", "Огненный камень 🔥", "Рубин 🔴", "Изумруд 💚"]},
 ]
 
 QUEST_TEMPLATES = [
@@ -536,6 +570,43 @@ TALENTS = {
     "summoner": {"name": "Призыватель 🐾", "desc": "+15 урона от союзника каждый ход"},
     "healer": {"name": "Хиллер 💚", "desc": "Лечит 20% макс HP раз за бой; вне боя 25 HP (кд 15м)"},
 }
+
+# ==================== ITEM_TYPES ====================
+ITEM_TYPES = {}
+for _n, _i in SHOP_ITEMS.items():
+    ITEM_TYPES[_n] = _i["type"]
+for _r in CRAFT_RECIPES:
+    ITEM_TYPES[_r["name"]] = "potion" if "effect" in _r else _r["type"]
+for _r in "FEDCBAS":
+    ITEM_TYPES[f"Сундук [{_r}] 📦"] = "chest"
+    for _a in ARTIFACTS.get(_r, []):
+        _fn = f"{_a['name']} [{_r}]"
+        ITEM_BONUSES[_fn] = {"str": _a.get("str", 0), "def": _a.get("def", 0), "hp": _a.get("hp", 0)}
+        ITEM_TYPES[_fn] = "artifact"
+    for _w in CHEST_WEAPONS.get(_r, []):
+        _fn = f"{_w['name']} [{_r}]"
+        ITEM_BONUSES[_fn] = {"str": _w.get("str", 0)}
+        ITEM_TYPES[_fn] = "weapon"
+    for _a in CHEST_ARMOR.get(_r, []):
+        _fn = f"{_a['name']} [{_r}]"
+        ITEM_BONUSES[_fn] = {"def": _a.get("def", 0), "hp": _a.get("hp", 0)}
+        ITEM_TYPES[_fn] = "armor"
+ITEM_TYPES.update({"Компас мудреца 🧭": "accessory", "Амулет глубин 🌊": "accessory", "Корона чемпиона 👑": "accessory"})
+for _p in POTION_SELL_PRICES:
+    ITEM_TYPES[_p] = "potion"
+ITEM_TYPES["Карта сокровищ 🗺️"] = "treasure"
+
+SEAL_SKILLS_POOL = [
+    {"name": "Критический удар ⚡", "effect": "crit_15", "desc": "15% шанс двойного урона"},
+    {"name": "Толстая кожа 🛡️", "effect": "dmg_reduce_10", "desc": "-10% получаемого урона"},
+    {"name": "Вампиризм 🩸", "effect": "lifesteal_5", "desc": "Восстанавливает 5% нанесённого урона"},
+    {"name": "Уклонение 💨", "effect": "dodge_10", "desc": "10% шанс увернуться"},
+    {"name": "Берсерк 😤", "effect": "berserk", "desc": "+50% урона при HP<30%"},
+    {"name": "Регенерация 💚", "effect": "regen", "desc": "+5 HP/час"},
+    {"name": "Шипы 🌵", "effect": "thorns", "desc": "Отражает 20% урона"},
+    {"name": "Двойной удар ⚔️", "effect": "double_strike", "desc": "10% шанс 2 атаки"},
+]
+
 # ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 def _safe_int(value, default=0):
     if value is None: return default
@@ -559,7 +630,7 @@ def get_seal(sid):
     c = get_conn().cursor()
     c.execute("SELECT * FROM seals WHERE seal_id=?", (sid,))
     r = c.fetchone()
-    if r: check_baby_growth(sid)
+    if r and _safe_int(r[11]) == 1: check_baby_growth(sid)
     return r
 
 def get_player_seals(uid):
@@ -623,7 +694,6 @@ def remove_from_inv(uid, name, q=1):
         else: c.execute("UPDATE inventory SET quantity=? WHERE inv_id=?", (nq, r[0]))
         conn.commit()
 
-# ИСПРАВЛЕНО: regex для редкости сэкранирован правильно
 def get_sell_price(item_name):
     if item_name in SHOP_ITEMS: return int(SHOP_ITEMS[item_name]["price"] * 0.5)
     if item_name in RESOURCE_SELL_PRICES: return RESOURCE_SELL_PRICES[item_name]
@@ -679,7 +749,6 @@ def uid_owner(sid):
     seal = get_seal(sid)
     return seal[1] if seal else 0
 
-# ИСПРАВЛЕНО: check_levelup — одна транзакция, без цикла подключений
 def check_levelup(sid):
     conn = get_conn(); c = conn.cursor()
     results = []
@@ -791,7 +860,6 @@ def get_enchanted_stats(uid, item_name):
     ench = ENCHANTMENTS.get(ench_name, {})
     return ench.get("bonus_str", 0), ench.get("bonus_def", 0)
 
-# ИСПРАВЛЕНО: get_effective_stats — используем seal[1] вместо лишнего вызова uid_owner
 def get_effective_stats(sid):
     seal = get_seal(sid)
     if not seal: return 0, 0, 0
@@ -841,10 +909,11 @@ def add_faction_rep(uid, amt):
 def get_floor_monster(fl, mon_idx):
     base_idx = (fl - 1 + mon_idx) % len(DUNGEON_MONSTERS)
     m = DUNGEON_MONSTERS[base_idx].copy()
-    # Базовая защита растёт от этажа — оставляем
-    m["def"] = int(m["def"] * (1 + (fl - 1) * 0.1))
+    floor_factor = 1 + (fl - 1) * 0.12
+    m["hp"] = int(m["hp"] * floor_factor)
+    m["str"] = int(m["str"] * floor_factor)
+    m["def"] = int(m["def"] * floor_factor)
     return m
-
 
 def process_drops(uid, drops):
     d = []
@@ -1090,7 +1159,6 @@ def talent_on_attack(sid, dmg, talent, level=1):
         return 0
     return 0
 
-
 def talent_on_defend(dmg, talent):
     if talent == "warrior": return int(dmg * 0.75)
     return dmg
@@ -1301,7 +1369,7 @@ def cmd_help(message):
          "*Подземелье:* 10 этажей, сундуки и артефакты!\n"
          "*Тиры крафта:* 5 уровней (Обычный→Легендарный)\n"
          "*Зелья:* 9 видов (лечение, сила, защита, ярость и др.)\n"
-         "*Зачарование:* 6 видов (огненное, ледяное, теневое и др.)\n"
+         "*Зачарование:* 8 видов (огненное, ледяное, теневое и др.)\n"
          "*Регенерация:* +25 HP/час | Навык каждые 5 уровней\n"
          "*Тюленята:* растут через 3 дня\n"
          "*Награды за задания:* рыбнетки + опыт + иногда еда")
@@ -1323,7 +1391,6 @@ def show_main_menu(chat_id):
     m.add(types.KeyboardButton("🗺️ Сокровища"))
     bot.send_message(chat_id, "Выберите действие:", reply_markup=m)
 
-# ИСПРАВЛЕНО: добавлены обработчики bindtopic / unbindtopic
 @bot.message_handler(commands=['bindtopic'])
 def cmd_bindtopic(message):
     chat_id = message.chat.id
@@ -1412,7 +1479,7 @@ def cmd_inventory(message):
     cats = {"food": "🍴 Еда", "medkit": "💊 Медицина", "weapon": "⚔️ Оружие", "armor": "🛡️ Броня",
             "helmet": "🪖 Шлемы", "shield": "🛡️ Щиты", "accessory": "🎀 Аксессуары",
             "resource": "📦 Ресурсы", "artifact": "✨ Артефакты", "chest": "📦 Сундуки",
-            "potion": "🧪 Зелья", "potion_base": "🧪 Основы"}
+            "potion": "🧪 Зелья", "potion_base": "🧪 Основы", "treasure": "🗺️ Карты"}
     grouped = {}
     for item in inv: grouped.setdefault(item[3], []).append(item)
     for cat, label in cats.items():
@@ -1502,7 +1569,7 @@ def inv_back(call):
     if not inv: bot.send_message(call.message.chat.id, "Пусто!"); return
     t = "🎒 *Инвентарь*\n\n"
     cats = {"food": "🍴 Еда", "medkit": "💊", "weapon": "⚔️", "armor": "🛡️", "helmet": "🪖", "shield": "🛡️",
-            "accessory": "🎀", "resource": "📦", "artifact": "✨", "chest": "📦", "potion": "🧪", "potion_base": "🧪"}
+            "accessory": "🎀", "resource": "📦", "artifact": "✨", "chest": "📦", "potion": "🧪", "potion_base": "🧪", "treasure": "🗺️"}
     grouped = {}
     for item in inv: grouped.setdefault(item[3], []).append(item)
     for cat, label in cats.items():
@@ -1525,7 +1592,7 @@ def menu_sell(message):
     grouped = {}
     for item in inv: grouped.setdefault(item[3], []).append(item)
     m = types.InlineKeyboardMarkup()
-    for cat in ("resource", "weapon", "armor", "helmet", "shield", "artifact", "chest", "food", "medkit", "accessory", "potion", "potion_base"):
+    for cat in ("resource", "weapon", "armor", "helmet", "shield", "artifact", "chest", "food", "medkit", "accessory", "potion", "potion_base", "treasure"):
         items = grouped.get(cat, [])
         for i in items:
             sp = get_sell_price(i[2])
@@ -1555,10 +1622,13 @@ def proc_seal_photo(message, sid):
     if not message.photo: bot.send_message(chat_id, "Не фото!"); return
     try:
         fi = bot.get_file(message.photo[-1].file_id); dl = bot.download_file(fi.file_path)
-        os.makedirs(PHOTOS_DIR, exist_ok=True); p = os.path.join(PHOTOS_DIR, f"seal_{sid}.jpg")
+        os.makedirs(PHOTOS_DIR, exist_ok=True)
+        p = os.path.join(PHOTOS_DIR, f"seal_{sid}.jpg")
         with open(p, 'wb') as f: f.write(dl)
-        update_seal(sid, photo_path=p); bot.send_message(chat_id, "✅ Фото обновлено!")
+        update_seal(sid, photo_path=p)
+        bot.send_message(chat_id, "✅ Фото обновлено!")
     except Exception as e: bot.send_message(chat_id, f"❌ {e}")
+
 @bot.message_handler(func=lambda m: m.text == "🦭 Мой тюлень")
 def menu_seal(message):
     uid = message.from_user.id; chat_id = message.chat.id
@@ -1896,7 +1966,6 @@ def back_to_main(call):
     show_main_menu(call.message.chat.id)
     try: bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
     except: pass
-
 # ==================== МАГАЗИН ====================
 @bot.message_handler(commands=['shop'])
 @bot.message_handler(func=lambda m: m.text == "🛒 Магазин")
@@ -2138,7 +2207,9 @@ def do_battle(call):
     es, ed, eh = get_effective_stats(sid); skills = get_seal_skills(sid)
     ps, pd, pdd, prg, psp, ptn = get_active_potion_mods(sid)
     boss = random.choice(BOSSES); bn = boss["name"]
-    bhp = random.randint(60, 100) + seal[9] * 10; bstr = random.randint(8, 15) + seal[9] * 2; bdef = random.randint(3, 8) + seal[9]
+    bhp = int((random.randint(60, 100) + seal[9] * 10) * 1.5)
+    bstr = int((random.randint(8, 15) + seal[9] * 2) * 1.5)
+    bdef = int((random.randint(3, 8) + seal[9]) * 1.3)
     log = [f"⚔️ *{seal[2]} vs {bn}*\n", f"{seal[2]}: ❤️{seal[3]}/{eh} 💪{es} 🛡️{ed}", f"{bn}: ❤️{bhp} 💪{bstr} 🛡️{bdef}\n"]
     if ps or pd or ptn:
         parts = []
@@ -2188,7 +2259,7 @@ def do_battle(call):
                 shp = min(eh, shp + ht); healer_used = True
                 log.append(f"💚 Талант: +{ht}HP!")
         ls = sum(1 for s in skills if s["effect"] == "lifesteal_5")
-        if ls: heal = int(dm * 0.05 * ls); shp = min(eh, shp + heal)
+        if ls: heal = int(dmg * 0.05 * ls); shp = min(eh, shp + heal)
         if any(s["effect"] == "thorns" for s in skills): bhp -= int(dm * 0.2)
     decrement_potion_use(sid)
     if bhp <= 0:
@@ -2210,6 +2281,7 @@ def do_battle(call):
         update_seal(sid, health=min(eh, max(1, shp)))
         log.append("\n🤝 Ничья!")
     bot.edit_message_text("\n".join(log), call.message.chat.id, call.message.message_id, parse_mode='Markdown')
+
 # ==================== ПОДЗЕМЕЛЬЕ ====================
 @bot.message_handler(commands=['dungeon'])
 @bot.message_handler(func=lambda m: m.text == "🏰 Подземелье")
@@ -2244,6 +2316,7 @@ def dng_start(call):
     c.execute("INSERT INTO dungeon_runs (user_id, seal_id, current_floor, active, current_monster, difficulty) VALUES (?, ?, 1, 1, 0, ?)", (uid, sid, did))
     conn.commit()
     dng_floor(call, sid, 1, 0, did)
+
 @bot.callback_query_handler(func=lambda c: c.data.startswith("dngmenu_"))
 def dungeon_menu(call):
     uid = call.from_user.id
@@ -2325,7 +2398,6 @@ def dng_floor(call, sid, fl, mon_idx, did=0):
     mon = get_floor_monster(fl, mon_idx)
     if not mon:
         bot.answer_callback_query(call.id, "Монстр не найден!", show_alert=True); return
-    # Применяем множители сложности
     mon = mon.copy()
     mon["hp"] = int(mon["hp"] * config["hp_mult"])
     mon["str"] = int(mon["str"] * config["str_mult"])
@@ -2343,7 +2415,6 @@ def dng_floor(call, sid, fl, mon_idx, did=0):
     except Exception:
         bot.send_message(call.message.chat.id, t, parse_mode='Markdown', reply_markup=m)
 
-@bot.callback_query_handler(func=lambda c: c.data.startswith("da_"))
 @bot.callback_query_handler(func=lambda c: c.data.startswith("da_"))
 def dng_atk(call):
     uid = call.from_user.id; p = call.data.split("_")
@@ -2413,7 +2484,7 @@ def dng_atk(call):
             ht = talent_heal_battle(eh, talent, seal[9])
             if ht > 0: seal_hp = min(eh, seal_hp + ht); h_used = True; log.append(f"💚 +{ht}HP!")
         ls = sum(1 for s in sk if s["effect"] == "lifesteal_5")
-        if ls: heal = int(dm * 0.05 * ls); seal_hp = min(eh, seal_hp + heal)
+        if ls: heal = int(d * 0.05 * ls); seal_hp = min(eh, seal_hp + heal)
         if any(s["effect"] == "thorns" for s in sk): mon_hp -= int(dm * 0.2)
 
     decrement_potion_use(sid)
@@ -2454,7 +2525,6 @@ def dng_next(call):
     did = int(p[4]) if len(p) > 4 else 0
     dng_floor(call, sid, fl, mon_idx, did)
 
-
 @bot.callback_query_handler(func=lambda c: c.data.startswith("df_"))
 def dng_flee(call):
     uid = call.from_user.id; p = call.data.split("_"); sid = int(p[1]); fl = int(p[2])
@@ -2463,7 +2533,6 @@ def dng_flee(call):
     c.execute("UPDATE dungeon_runs SET active=0 WHERE user_id=?", (uid,)); conn.commit()
     bot.answer_callback_query(call.id, "Вы покинули подземелье!")
     seal_selected(call, sid)
-
 # ==================== РЫБАЛКА ====================
 fish_active = {}
 
@@ -2627,35 +2696,33 @@ def duel_seal(call):
         if random.random() < cdodge: log.append("💨 Уклонение!"); continue
         od = max(1, od - ced + random.randint(-3, 5))
         if optn: od = int(od * (1 + optn))
+        # ИСПРАВЛЕНО: talent_on_defend применяется ДО вычитания HP
+        if ctalent: od = talent_on_defend(od, ctalent)
+        if any(s["effect"] == "dmg_reduce_10" for s in csk): od = int(od * 0.9)
         chp -= od
-        # Талант отвечающего при атаке (РАНЕЕ ОТСУТСТВОВАЛ)
         if otalent:
             extra = talent_on_attack(osid, od, otalent, oseal[9])
             if extra > 0: chp -= extra; log.append(f"✨ {oseal[2]}: +{extra}!")
         log.append(f"Р{rnd}: {oseal[2]} →{od} ({cseal[2]} {max(0, chp)}❤️)")
         if chp <= 0: break
 
-        # --- Защита и лечение вызывающего ---
-        if ctalent: od = talent_on_defend(od, ctalent)
-        if any(s["effect"] == "dmg_reduce_10" for s in csk): od = int(od * 0.9)
+        # --- Лечение вызывающего ---
         if cprg > 0: chp = min(ceh, chp + cprg)
         if ctalent and not ch_used:
             ht = talent_heal_battle(ceh, ctalent, cseal[9])
             if ht > 0: chp = min(ceh, chp + ht); ch_used = True; log.append(f"💚 {cseal[2]}: +{ht}HP!")
 
-        # --- Защита и лечение отвечающего ---
-        if otalent: cd = talent_on_defend(cd, otalent)
-        if any(s["effect"] == "dmg_reduce_10" for s in osk): cd = int(cd * 0.9)
+        # --- Лечение отвечающего ---
         if oprg > 0: ohp = min(oeh, ohp + oprg)
         if otalent and not oh_used:
             ht = talent_heal_battle(oeh, otalent, oseal[9])
             if ht > 0: ohp = min(oeh, ohp + ht); oh_used = True; log.append(f"💚 {oseal[2]}: +{ht}HP!")
 
-        # --- Лайфстил и шипы ---
+        # --- ИСПРАВЛЕНО: Лайфстил от нанесённого урона ---
         ls_c = sum(1 for s in csk if s["effect"] == "lifesteal_5")
-        if ls_c: heal = int(od * 0.05 * ls_c); chp = min(ceh, chp + heal)
+        if ls_c: heal = int(cd * 0.05 * ls_c); chp = min(ceh, chp + heal)
         ls_o = sum(1 for s in osk if s["effect"] == "lifesteal_5")
-        if ls_o: heal = int(cd * 0.05 * ls_o); ohp = min(oeh, ohp + heal)
+        if ls_o: heal = int(od * 0.05 * ls_o); ohp = min(oeh, ohp + heal)
         if any(s["effect"] == "thorns" for s in csk): ohp -= int(od * 0.2)
         if any(s["effect"] == "thorns" for s in osk): chp -= int(cd * 0.2)
 
