@@ -17,6 +17,7 @@ PLAY_COOLDOWN_MIN = 15
 BABY_GROW_DAYS = 3
 LOTTERY_TICKET_PRICE = 50
 TREASURE_TOTAL_STEPS = 10
+EXP_DIVISOR = 3  # Делитель опыта — уменьшение в 3 раза
 
 # ==================== БД: thread-local ====================
 _db_local = threading.local()
@@ -155,6 +156,7 @@ def run_migrations():
     set_db_version(conn, len(MIGRATIONS))
     conn.commit()
     conn.close()
+
 # ==================== КОНСТАНТЫ ====================
 SHOP_ITEMS = {
     "Апельсин 🍊": {"price": 15, "type": "food", "satiety": 25, "mood": 10},
@@ -176,7 +178,6 @@ SHOP_ITEMS = {
     "Радужный пояс 🌈": {"price": 80, "type": "accessory"},
     "Пустая колба 🧪": {"price": 15, "type": "potion_base"},
 }
-
 ITEM_BONUSES = {
     # ===== Оружие =====
     "Костяной меч 🗡️": {"str": 5}, "Акулий клык 🦷": {"str": 8}, "Трезубец 🔱": {"str": 12}, "Китовый клинок 🐋": {"str": 15},
@@ -190,25 +191,23 @@ ITEM_BONUSES = {
     "Изумрудный панцирь 💚": {"def": 15, "hp": 42}, "Кристальный доспех 💎": {"def": 20, "hp": 55},
     "Грозовая броня ⚡": {"def": 19, "hp": 60}, "Костяной доспех титана 🦴": {"def": 26, "hp": 90},
     "Янтарный панцирь дракона 🟡": {"def": 25, "hp": 95}, "Изумрудная броня богов 💚": {"def": 48, "hp": 190},
-    # ===== Брони высоких тиров (оригинальные) =====
+    # ===== Брони высоких тиров =====
     "Ледяная броня ❄️": {"def": 18, "hp": 50}, "Огненная броня 🔥": {"def": 16, "hp": 55},
     "Молниевая броня ⚡": {"def": 22, "hp": 70}, "Призрачная броня 👻": {"def": 24, "hp": 65},
     "Драконья броня 🐉": {"def": 30, "hp": 100}, "Буревая броня 🌪️": {"def": 28, "hp": 110},
     "Броня Богов 🛡️": {"def": 45, "hp": 200}, "Броня Бездны 🌑": {"def": 50, "hp": 180},
-    # ===== Шлемы (оригинальные) =====
+    # ===== Шлемы =====
     "Шлем из ракушек 🐚": {"def": 3, "hp": 10}, "Костяной шлем 💀": {"def": 5, "hp": 15}, "Корона из зубов 👑": {"def": 8, "hp": 20},
     "Ядовитый шлем ☠️": {"def": 4, "hp": 12}, "Морозный шлем 🧊": {"def": 10, "hp": 30}, "Пламенный шлем 🔥": {"def": 12, "hp": 25},
     "Громовой шлем ⚡": {"def": 15, "hp": 45}, "Призрачный шлем 👻": {"def": 16, "hp": 40},
     "Драконий шлем 🐉": {"def": 20, "hp": 60}, "Шлем бури 🌪️": {"def": 18, "hp": 65},
     "Шлем Богов 👑": {"def": 30, "hp": 120}, "Шлем Бездны 🌑": {"def": 32, "hp": 110},
-    # ===== Шлемы (новые) =====
     "Янтарный шлем 🟡": {"def": 8, "hp": 22}, "Костяной шлем титана 🦴": {"def": 14, "hp": 50},
     "Рубиновый шлем Бездны 🔴": {"def": 22, "hp": 100},
-    # ===== Щиты (оригинальные) =====
+    # ===== Щиты =====
     "Щит из чешуи 🐠": {"def": 5}, "Панцирный щит 🛡️": {"def": 8}, "Щит кракена 🦑": {"def": 12}, "Ядовитый щит ☠️": {"def": 7},
     "Ледяной щит ❄️": {"def": 15}, "Щит пламени 🔥": {"def": 16}, "Щит молний ⚡": {"def": 20}, "Призрачный щит 👻": {"def": 22},
     "Драконий щит 🐉": {"def": 28}, "Щит бури 🌪️": {"def": 26}, "Щит Богов 🛡️": {"def": 40}, "Щит Бездны 🌑": {"def": 42},
-    # ===== Щиты (новые) =====
     "Изумрудный щит 💚": {"def": 18}, "Рубиновый щит 🔴": {"def": 25},
     # ===== Оружие высоких тиров =====
     "Ледяной клинок ❄️": {"str": 18}, "Огненный меч 🔥": {"str": 20}, "Коралловый меч 🪸": {"str": 16},
@@ -228,94 +227,73 @@ CRAFT_TIER_MULT = {"common": 1.0, "uncommon": 1.3, "rare": 1.6, "epic": 2.0, "le
 CRAFT_TIER_LABEL = {"common": "Обычный", "uncommon": "Необычный", "rare": "Редкий", "epic": "Эпический", "legendary": "Легендарный"}
 
 CRAFT_RECIPES = [
-    # ===== Оружие common =====
     {"name": "Костяной меч 🗡️", "type": "weapon", "tier": "common", "resources": {"Акулий зуб 🦈": 3}},
     {"name": "Акулий клык 🦷", "type": "weapon", "tier": "common", "resources": {"Акулий зуб 🦈": 5, "Чешуя 🐟": 2}},
     {"name": "Трезубец 🔱", "type": "weapon", "tier": "common", "resources": {"Щупальце 🐙": 4, "Акулий зуб 🦈": 3}},
     {"name": "Китовый клинок 🐋", "type": "weapon", "tier": "common", "resources": {"Китовый ус 🐋": 3, "Жемчуг 🫧": 1}},
     {"name": "Ядовитый клинок ☠️", "type": "weapon", "tier": "common", "resources": {"Жало 🐡": 3, "Акулий зуб 🦈": 2}},
     {"name": "Ядовитый дротик 🎯", "type": "weapon", "tier": "common", "resources": {"Жало 🐡": 2, "Чешуя 🐟": 3}},
-    # ===== Броня common =====
     {"name": "Чешуйчатая броня 🐟", "type": "armor", "tier": "common", "resources": {"Чешуя 🐟": 4}},
     {"name": "Панцирь краба 🦀", "type": "armor", "tier": "common", "resources": {"Панцирь 🦀": 3}},
     {"name": "Плетёная броня 🧵", "type": "armor", "tier": "common", "resources": {"Щупальце 🐙": 3, "Чешуя 🐟": 2}},
     {"name": "Кракеновый панцирь 🐙", "type": "armor", "tier": "common", "resources": {"Щупальце 🐙": 5, "Жемчуг 🫧": 1}},
     {"name": "Коралловый панцирь 🪸", "type": "armor", "tier": "common", "resources": {"Коралл 🪸": 4, "Панцирь 🦀": 1}},
     {"name": "Ракушечная броня 🐚", "type": "armor", "tier": "common", "resources": {"Панцирь 🦀": 3, "Чешуя 🐟": 2, "Костяной порошок 🦴": 2}},
-    # ===== Шлемы common =====
     {"name": "Шлем из ракушек 🐚", "type": "helmet", "tier": "common", "resources": {"Панцирь 🦀": 3, "Чешуя 🐟": 1}},
     {"name": "Костяной шлем 💀", "type": "helmet", "tier": "common", "resources": {"Акулий зуб 🦈": 3}},
     {"name": "Корона из зубов 👑", "type": "helmet", "tier": "common", "resources": {"Акулий зуб 🦈": 5, "Жемчуг 🫧": 1}},
     {"name": "Ядовитый шлем ☠️", "type": "helmet", "tier": "common", "resources": {"Жало 🐡": 3, "Чешуя 🐟": 2}},
-    # ===== Щиты common =====
     {"name": "Щит из чешуи 🐠", "type": "shield", "tier": "common", "resources": {"Чешуя 🐟": 4, "Панцирь 🦀": 1}},
     {"name": "Панцирный щит 🛡️", "type": "shield", "tier": "common", "resources": {"Панцирь 🦀": 4}},
     {"name": "Щит кракена 🦑", "type": "shield", "tier": "common", "resources": {"Щупальце 🐙": 3, "Панцирь 🦀": 2}},
     {"name": "Ядовитый щит ☠️", "type": "shield", "tier": "common", "resources": {"Жало 🐡": 4, "Панцирь 🦀": 2}},
-    # ===== Оружие uncommon =====
     {"name": "Коралловый меч 🪸", "type": "weapon", "tier": "uncommon", "resources": {"Коралл 🪸": 4, "Акулий зуб 🦈": 2}},
     {"name": "Ледяной клинок ❄️", "type": "weapon", "tier": "uncommon", "resources": {"Ледяной кристалл 🧊": 3, "Чешуя 🐟": 3}},
     {"name": "Огненный меч 🔥", "type": "weapon", "tier": "uncommon", "resources": {"Огненный камень 🔥": 3, "Акулий зуб 🦈": 3}},
-    # ===== Броня uncommon (новая + оригинальная) =====
     {"name": "Ледяная броня ❄️", "type": "armor", "tier": "uncommon", "resources": {"Ледяной кристалл 🧊": 4, "Панцирь 🦀": 2}},
     {"name": "Огненная броня 🔥", "type": "armor", "tier": "uncommon", "resources": {"Огненный камень 🔥": 4, "Чешуя 🐟": 3}},
     {"name": "Янтарная броня 🟡", "type": "armor", "tier": "uncommon", "resources": {"Янтарная смола 🟡": 4, "Панцирь 🦀": 2}},
     {"name": "Рубиновый нагрудник 🔴", "type": "armor", "tier": "uncommon", "resources": {"Рубин 🔴": 2, "Чешуя 🐟": 3, "Огненный камень 🔥": 2}},
     {"name": "Изумрудный панцирь 💚", "type": "armor", "tier": "uncommon", "resources": {"Изумруд 💚": 2, "Панцирь 🦀": 3, "Ледяной кристалл 🧊": 2}},
-    # ===== Шлемы uncommon =====
     {"name": "Морозный шлем 🧊", "type": "helmet", "tier": "uncommon", "resources": {"Ледяной кристалл 🧊": 3, "Панцирь 🦀": 2}},
     {"name": "Пламенный шлем 🔥", "type": "helmet", "tier": "uncommon", "resources": {"Огненный камень 🔥": 3, "Акулий зуб 🦈": 2}},
     {"name": "Янтарный шлем 🟡", "type": "helmet", "tier": "uncommon", "resources": {"Янтарная смола 🟡": 3, "Костяной порошок 🦴": 2}},
-    # ===== Щиты uncommon =====
     {"name": "Ледяной щит ❄️", "type": "shield", "tier": "uncommon", "resources": {"Ледяной кристалл 🧊": 3, "Панцирь 🦀": 2}},
     {"name": "Щит пламени 🔥", "type": "shield", "tier": "uncommon", "resources": {"Огненный камень 🔥": 3, "Панцирь 🦀": 2}},
-    # ===== Оружие rare =====
     {"name": "Кристальный клинок 💎", "type": "weapon", "tier": "rare", "resources": {"Кристальный осколок 💎": 4, "Коралл 🪸": 2}},
     {"name": "Молниевый клинок ⚡", "type": "weapon", "tier": "rare", "resources": {"Грозовой камень ⚡": 4, "Ледяной кристалл 🧊": 2}},
     {"name": "Призрачный меч 👻", "type": "weapon", "tier": "rare", "resources": {"Призрачная эссенция 👻": 4, "Огненный камень 🔥": 2}},
-    # ===== Броня rare =====
     {"name": "Молниевая броня ⚡", "type": "armor", "tier": "rare", "resources": {"Грозовой камень ⚡": 5, "Ледяной кристалл 🧊": 3}},
     {"name": "Призрачная броня 👻", "type": "armor", "tier": "rare", "resources": {"Призрачная эссенция 👻": 5, "Огненный камень 🔥": 3}},
     {"name": "Кристальный доспех 💎", "type": "armor", "tier": "rare", "resources": {"Кристальный осколок 💎": 5, "Коралл 🪸": 3}},
     {"name": "Грозовая броня ⚡", "type": "armor", "tier": "rare", "resources": {"Грозовой камень ⚡": 4, "Морской глаз 👁️": 2}},
-    # ===== Шлемы rare =====
     {"name": "Громовой шлем ⚡", "type": "helmet", "tier": "rare", "resources": {"Грозовой камень ⚡": 3, "Кристальный осколок 💎": 1}},
     {"name": "Призрачный шлем 👻", "type": "helmet", "tier": "rare", "resources": {"Призрачная эссенция 👻": 3, "Кристальный осколок 💎": 1}},
-    # ===== Щиты rare =====
     {"name": "Щит молний ⚡", "type": "shield", "tier": "rare", "resources": {"Грозовой камень ⚡": 3, "Панцирь 🦀": 3}},
     {"name": "Призрачный щит 👻", "type": "shield", "tier": "rare", "resources": {"Призрачная эссенция 👻": 3, "Панцирь 🦀": 3}},
     {"name": "Изумрудный щит 💚", "type": "shield", "tier": "rare", "resources": {"Изумруд 💚": 2, "Кристальный осколок 💎": 2, "Панцирь 🦀": 2}},
-    # ===== Оружие epic =====
     {"name": "Клинок дракона 🐉", "type": "weapon", "tier": "epic", "resources": {"Драконья чешуя 🐉": 5, "Грозовой камень ⚡": 3}},
     {"name": "Буревой топор 🌪️", "type": "weapon", "tier": "epic", "resources": {"Драконья чешуя 🐉": 5, "Огненный камень 🔥": 3}},
-    # ===== Броня epic =====
     {"name": "Драконья броня 🐉", "type": "armor", "tier": "epic", "resources": {"Драконья чешуя 🐉": 6, "Кристальный осколок 💎": 3}},
     {"name": "Буревая броня 🌪️", "type": "armor", "tier": "epic", "resources": {"Драконья чешуя 🐉": 6, "Грозовой камень ⚡": 3}},
     {"name": "Костяной доспех титана 🦴", "type": "armor", "tier": "epic", "resources": {"Драконья чешуя 🐉": 4, "Костяной порошок 🦴": 5, "Кровь кракена 🩸": 2}},
     {"name": "Янтарный панцирь дракона 🟡", "type": "armor", "tier": "epic", "resources": {"Драконья чешуя 🐉": 4, "Янтарная смола 🟡": 5, "Морской глаз 👁️": 2}},
-    # ===== Шлемы epic =====
     {"name": "Драконий шлем 🐉", "type": "helmet", "tier": "epic", "resources": {"Драконья чешуя 🐉": 4, "Кровь кракена 🩸": 2}},
     {"name": "Шлем бури 🌪️", "type": "helmet", "tier": "epic", "resources": {"Драконья чешуя 🐉": 4, "Тёмная эссенция 🌑": 2}},
     {"name": "Костяной шлем титана 🦴", "type": "helmet", "tier": "epic", "resources": {"Драконья чешуя 🐉": 3, "Костяной порошок 🦴": 4, "Кровь кракена 🩸": 1}},
-    # ===== Щиты epic =====
     {"name": "Драконий щит 🐉", "type": "shield", "tier": "epic", "resources": {"Драконья чешуя 🐉": 4, "Кровь кракена 🩸": 2}},
     {"name": "Щит бури 🌪️", "type": "shield", "tier": "epic", "resources": {"Драконья чешуя 🐉": 4, "Тёмная эссенция 🌑": 2}},
     {"name": "Рубиновый щит 🔴", "type": "shield", "tier": "epic", "resources": {"Рубин 🔴": 3, "Драконья чешуя 🐉": 3, "Огненный камень 🔥": 2}},
-    # ===== Оружие legendary =====
     {"name": "Меч Богов ⚔️", "type": "weapon", "tier": "legendary", "resources": {"Слеза Посейдона 💧": 2, "Драконья чешуя 🐉": 5}},
     {"name": "Клинок Бездны 🌑", "type": "weapon", "tier": "legendary", "resources": {"Слеза Посейдона 💧": 2, "Тёмная эссенция 🌑": 5}},
-    # ===== Броня legendary =====
     {"name": "Броня Богов 🛡️", "type": "armor", "tier": "legendary", "resources": {"Слеза Посейдона 💧": 3, "Драконья чешуя 🐉": 5}},
     {"name": "Броня Бездны 🌑", "type": "armor", "tier": "legendary", "resources": {"Слеза Посейдона 💧": 3, "Тёмная эссенция 🌑": 5}},
     {"name": "Изумрудная броня богов 💚", "type": "armor", "tier": "legendary", "resources": {"Слеза Посейдона 💧": 2, "Изумруд 💚": 3, "Драконья чешуя 🐉": 4}},
-    # ===== Шлемы legendary =====
     {"name": "Шлем Богов 👑", "type": "helmet", "tier": "legendary", "resources": {"Слеза Посейдона 💧": 2, "Кровь кракена 🩸": 3}},
     {"name": "Шлем Бездны 🌑", "type": "helmet", "tier": "legendary", "resources": {"Слеза Посейдона 💧": 2, "Тёмная эссенция 🌑": 3}},
     {"name": "Рубиновый шлем Бездны 🔴", "type": "helmet", "tier": "legendary", "resources": {"Слеза Посейдона 💧": 2, "Рубин 🔴": 3, "Тёмная эссенция 🌑": 2}},
-    # ===== Щиты legendary =====
     {"name": "Щит Богов 🛡️", "type": "shield", "tier": "legendary", "resources": {"Слеза Посейдона 💧": 2, "Кровь кракена 🩸": 3}},
     {"name": "Щит Бездны 🌑", "type": "shield", "tier": "legendary", "resources": {"Слеза Посейдона 💧": 2, "Тёмная эссенция 🌑": 3}},
-    # ===== Зелья =====
     {"name": "Зелье лечения 💚", "type": "potion", "tier": "common", "resources": {"Водоросли 🌿": 3, "Пустая колба 🧪": 1}, "effect": "heal", "value": 40},
     {"name": "Зелье силы 💪", "type": "potion", "tier": "common", "resources": {"Акулий зуб 🦈": 2, "Пустая колба 🧪": 1}, "effect": "str_boost", "value": 10, "duration": 5},
     {"name": "Зелье защиты 🛡️", "type": "potion", "tier": "common", "resources": {"Панцирь 🦀": 2, "Пустая колба 🧪": 1}, "effect": "def_boost", "value": 10, "duration": 5},
@@ -386,7 +364,6 @@ RESOURCE_SELL_PRICES = {
     "Грозовой камень ⚡": 30, "Кристальный осколок 💎": 35, "Призрачная эссенция 👻": 35,
     "Драконья чешуя 🐉": 60, "Кровь кракена 🩸": 50, "Тёмная эссенция 🌑": 55,
     "Слеза Посейдона 💧": 120, "Карта сокровищ 🗺️": 40,
-    # Новые ресурсы
     "Морской глаз 👁️": 40, "Костяной порошок 🦴": 12, "Янтарная смола 🟡": 45, "Рубин 🔴": 80, "Изумруд 💚": 85,
 }
 
@@ -398,87 +375,102 @@ POTION_SELL_PRICES = {
 
 RARITY_SELL_PRICES = {"F": 15, "E": 35, "D": 75, "C": 150, "B": 350, "A": 700, "S": 1500}
 
-# ===== Лёгкое подземелье (усиленное) =====
+# ===== Лёгкое подземелье (усиленное x1.5) =====
 DUNGEON_FLOORS_EASY = [
-    {"monsters": 2, "chest_rarity": "F", "hp_mult": 1.2, "str_mult": 1.1, "def_mult": 1.0},
-    {"monsters": 2, "chest_rarity": "F", "hp_mult": 1.6, "str_mult": 1.3, "def_mult": 1.1},
-    {"monsters": 3, "chest_rarity": "E", "hp_mult": 2.0, "str_mult": 1.5, "def_mult": 1.2},
-    {"monsters": 3, "chest_rarity": "D", "hp_mult": 2.5, "str_mult": 1.8, "def_mult": 1.4},
-    {"monsters": 3, "chest_rarity": "C", "hp_mult": 3.2, "str_mult": 2.0, "def_mult": 1.5},
-    {"monsters": 4, "chest_rarity": "C", "hp_mult": 4.0, "str_mult": 2.3, "def_mult": 1.7},
-    {"monsters": 4, "chest_rarity": "B", "hp_mult": 4.8, "str_mult": 2.6, "def_mult": 1.9},
-    {"monsters": 4, "chest_rarity": "A", "hp_mult": 5.5, "str_mult": 3.0, "def_mult": 2.2},
-    {"monsters": 5, "chest_rarity": "A", "hp_mult": 7.0, "str_mult": 3.5, "def_mult": 2.5},
-    {"monsters": 5, "chest_rarity": "S", "hp_mult": 8.5, "str_mult": 4.0, "def_mult": 3.0},
+    {"monsters": 2, "chest_rarity": "F", "hp_mult": 1.8, "str_mult": 1.65, "def_mult": 1.5},
+    {"monsters": 2, "chest_rarity": "F", "hp_mult": 2.4, "str_mult": 1.95, "def_mult": 1.65},
+    {"monsters": 3, "chest_rarity": "E", "hp_mult": 3.0, "str_mult": 2.25, "def_mult": 1.8},
+    {"monsters": 3, "chest_rarity": "D", "hp_mult": 3.75, "str_mult": 2.7, "def_mult": 2.1},
+    {"monsters": 3, "chest_rarity": "C", "hp_mult": 4.8, "str_mult": 3.0, "def_mult": 2.25},
+    {"monsters": 4, "chest_rarity": "C", "hp_mult": 6.0, "str_mult": 3.45, "def_mult": 2.55},
+    {"monsters": 4, "chest_rarity": "B", "hp_mult": 7.2, "str_mult": 3.9, "def_mult": 2.85},
+    {"monsters": 4, "chest_rarity": "A", "hp_mult": 8.25, "str_mult": 4.5, "def_mult": 3.3},
+    {"monsters": 5, "chest_rarity": "A", "hp_mult": 10.5, "str_mult": 5.25, "def_mult": 3.75},
+    {"monsters": 5, "chest_rarity": "S", "hp_mult": 12.75, "str_mult": 6.0, "def_mult": 4.5},
 ]
 
-# ===== Среднее подземелье (усиленное) =====
+# ===== Среднее подземелье (усиленное x1.5) =====
 DUNGEON_FLOORS_NORMAL = [
-    {"monsters": 3, "chest_rarity": "E", "hp_mult": 2.5, "str_mult": 1.7, "def_mult": 1.3},
-    {"monsters": 3, "chest_rarity": "D", "hp_mult": 3.0, "str_mult": 2.0, "def_mult": 1.5},
-    {"monsters": 3, "chest_rarity": "D", "hp_mult": 3.8, "str_mult": 2.3, "def_mult": 1.7},
-    {"monsters": 4, "chest_rarity": "C", "hp_mult": 4.5, "str_mult": 2.6, "def_mult": 1.9},
-    {"monsters": 4, "chest_rarity": "C", "hp_mult": 5.2, "str_mult": 2.9, "def_mult": 2.1},
-    {"monsters": 4, "chest_rarity": "B", "hp_mult": 6.5, "str_mult": 3.3, "def_mult": 2.4},
-    {"monsters": 5, "chest_rarity": "B", "hp_mult": 7.8, "str_mult": 3.7, "def_mult": 2.7},
-    {"monsters": 5, "chest_rarity": "A", "hp_mult": 9.5, "str_mult": 4.2, "def_mult": 3.1},
-    {"monsters": 6, "chest_rarity": "A", "hp_mult": 11.0, "str_mult": 4.8, "def_mult": 3.6},
-    {"monsters": 6, "chest_rarity": "S", "hp_mult": 14.0, "str_mult": 5.5, "def_mult": 4.2},
+    {"monsters": 3, "chest_rarity": "E", "hp_mult": 3.75, "str_mult": 2.55, "def_mult": 1.95},
+    {"monsters": 3, "chest_rarity": "D", "hp_mult": 4.5, "str_mult": 3.0, "def_mult": 2.25},
+    {"monsters": 3, "chest_rarity": "D", "hp_mult": 5.7, "str_mult": 3.45, "def_mult": 2.55},
+    {"monsters": 4, "chest_rarity": "C", "hp_mult": 6.75, "str_mult": 3.9, "def_mult": 2.85},
+    {"monsters": 4, "chest_rarity": "C", "hp_mult": 7.8, "str_mult": 4.35, "def_mult": 3.15},
+    {"monsters": 4, "chest_rarity": "B", "hp_mult": 9.75, "str_mult": 4.95, "def_mult": 3.6},
+    {"monsters": 5, "chest_rarity": "B", "hp_mult": 11.7, "str_mult": 5.55, "def_mult": 4.05},
+    {"monsters": 5, "chest_rarity": "A", "hp_mult": 14.25, "str_mult": 6.3, "def_mult": 4.65},
+    {"monsters": 6, "chest_rarity": "A", "hp_mult": 16.5, "str_mult": 7.2, "def_mult": 5.4},
+    {"monsters": 6, "chest_rarity": "S", "hp_mult": 21.0, "str_mult": 8.25, "def_mult": 6.3},
 ]
 
-# ===== Сложное подземелье (усиленное) =====
+# ===== Сложное подземелье (усиленное x1.5) =====
 DUNGEON_FLOORS_HARD = [
-    {"monsters": 4, "chest_rarity": "D", "hp_mult": 4.0, "str_mult": 2.3, "def_mult": 1.7},
-    {"monsters": 4, "chest_rarity": "C", "hp_mult": 5.5, "str_mult": 2.8, "def_mult": 2.0},
-    {"monsters": 4, "chest_rarity": "C", "hp_mult": 6.5, "str_mult": 3.2, "def_mult": 2.3},
-    {"monsters": 5, "chest_rarity": "B", "hp_mult": 8.0, "str_mult": 3.6, "def_mult": 2.7},
-    {"monsters": 5, "chest_rarity": "B", "hp_mult": 9.5, "str_mult": 4.1, "def_mult": 3.1},
-    {"monsters": 5, "chest_rarity": "A", "hp_mult": 11.0, "str_mult": 4.6, "def_mult": 3.5},
-    {"monsters": 6, "chest_rarity": "A", "hp_mult": 13.5, "str_mult": 5.2, "def_mult": 4.0},
-    {"monsters": 6, "chest_rarity": "S", "hp_mult": 16.0, "str_mult": 5.8, "def_mult": 4.5},
-    {"monsters": 7, "chest_rarity": "S", "hp_mult": 20.0, "str_mult": 6.5, "def_mult": 5.2},
-    {"monsters": 7, "chest_rarity": "S", "hp_mult": 26.0, "str_mult": 7.5, "def_mult": 6.0},
+    {"monsters": 4, "chest_rarity": "D", "hp_mult": 6.0, "str_mult": 3.45, "def_mult": 2.55},
+    {"monsters": 4, "chest_rarity": "C", "hp_mult": 8.25, "str_mult": 4.2, "def_mult": 3.0},
+    {"monsters": 4, "chest_rarity": "C", "hp_mult": 9.75, "str_mult": 4.8, "def_mult": 3.45},
+    {"monsters": 5, "chest_rarity": "B", "hp_mult": 12.0, "str_mult": 5.4, "def_mult": 4.05},
+    {"monsters": 5, "chest_rarity": "B", "hp_mult": 14.25, "str_mult": 6.15, "def_mult": 4.65},
+    {"monsters": 5, "chest_rarity": "A", "hp_mult": 16.5, "str_mult": 6.9, "def_mult": 5.25},
+    {"monsters": 6, "chest_rarity": "A", "hp_mult": 20.25, "str_mult": 7.8, "def_mult": 6.0},
+    {"monsters": 6, "chest_rarity": "S", "hp_mult": 24.0, "str_mult": 8.7, "def_mult": 6.75},
+    {"monsters": 7, "chest_rarity": "S", "hp_mult": 30.0, "str_mult": 9.75, "def_mult": 7.8},
+    {"monsters": 7, "chest_rarity": "S", "hp_mult": 39.0, "str_mult": 11.25, "def_mult": 9.0},
+]
+
+# ===== НОВОЕ: Бездонное подземелье (намного сложнее) =====
+DUNGEON_FLOORS_ABYSS = [
+    {"monsters": 5, "chest_rarity": "C", "hp_mult": 15.0, "str_mult": 8.0, "def_mult": 6.0},
+    {"monsters": 5, "chest_rarity": "B", "hp_mult": 20.0, "str_mult": 10.0, "def_mult": 7.5},
+    {"monsters": 6, "chest_rarity": "B", "hp_mult": 28.0, "str_mult": 12.0, "def_mult": 9.0},
+    {"monsters": 6, "chest_rarity": "A", "hp_mult": 38.0, "str_mult": 14.0, "def_mult": 10.5},
+    {"monsters": 6, "chest_rarity": "A", "hp_mult": 50.0, "str_mult": 16.5, "def_mult": 12.0},
+    {"monsters": 7, "chest_rarity": "A", "hp_mult": 65.0, "str_mult": 19.0, "def_mult": 14.0},
+    {"monsters": 7, "chest_rarity": "S", "hp_mult": 85.0, "str_mult": 22.0, "def_mult": 16.5},
+    {"monsters": 7, "chest_rarity": "S", "hp_mult": 110.0, "str_mult": 26.0, "def_mult": 19.5},
+    {"monsters": 8, "chest_rarity": "S", "hp_mult": 145.0, "str_mult": 30.0, "def_mult": 23.0},
+    {"monsters": 8, "chest_rarity": "S", "hp_mult": 200.0, "str_mult": 38.0, "def_mult": 28.0},
 ]
 
 DUNGEON_CONFIGS = {
     0: {"name": "🌊 Лёгкое", "floors": DUNGEON_FLOORS_EASY, "min_level": 1, "exp_mult": 1.0},
     1: {"name": "🔥 Среднее", "floors": DUNGEON_FLOORS_NORMAL, "min_level": 10, "exp_mult": 1.5},
     2: {"name": "💀 Сложное", "floors": DUNGEON_FLOORS_HARD, "min_level": 20, "exp_mult": 2.5},
+    3: {"name": "🌑 Бездна", "floors": DUNGEON_FLOORS_ABYSS, "min_level": 35, "exp_mult": 5.0},
 }
 DUNGEON_TOTAL_FLOORS = 10
-# ==================== МОНСТРЫ И БОССЫ ====================
+
+# ==================== МОНСТРЫ И БОССЫ (усиленные) ====================
 DUNGEON_MONSTERS = [
-    {"name": "Фугу 🐡", "hp": 30, "str": 8, "def": 3, "drops": {"Жало 🐡": 0.7}},
-    {"name": "Креветка-ниндзя 🦐", "hp": 35, "str": 9, "def": 8, "drops": {"Панцирь 🦀": 0.5, "Чешуя 🐟": 0.3}},
-    {"name": "Акула 🦈", "hp": 50, "str": 12, "def": 5, "drops": {"Акулий зуб 🦈": 0.7}},
-    {"name": "Морской змей 🐍", "hp": 60, "str": 15, "def": 6, "drops": {"Чешуя 🐟": 0.7}},
-    {"name": "Кракен 🐙", "hp": 80, "str": 18, "def": 8, "drops": {"Щупальце 🐙": 0.7, "Жемчуг 🫧": 0.1}},
-    {"name": "Лобстер 🦞", "hp": 40, "str": 10, "def": 10, "drops": {"Панцирь 🦀": 0.7}},
-    {"name": "Кашалот 🐋", "hp": 120, "str": 20, "def": 12, "drops": {"Китовый ус 🐋": 0.6}},
-    {"name": "Электрический скат ⚡", "hp": 55, "str": 14, "def": 4, "drops": {"Чешуя 🐟": 0.5, "Жало 🐡": 0.3}},
-    {"name": "Гигантская медуза 🪼", "hp": 45, "str": 11, "def": 3, "drops": {"Жало 🐡": 0.6}},
-    {"name": "Морской дьявол 😈", "hp": 90, "str": 16, "def": 9, "drops": {"Жемчуг 🫧": 0.3, "Чешуя 🐟": 0.4}},
-    {"name": "Коралловый голем 🪸", "hp": 70, "str": 12, "def": 14, "drops": {"Коралл 🪸": 0.7}},
-    {"name": "Ледяной краб 🧊", "hp": 65, "str": 14, "def": 10, "drops": {"Ледяной кристалл 🧊": 0.4, "Панцирь 🦀": 0.4}},
-    {"name": "Огненный спрут 🔥", "hp": 75, "str": 16, "def": 6, "drops": {"Огненный камень 🔥": 0.4, "Щупальце 🐙": 0.3}},
-    {"name": "Громовой скат ⚡", "hp": 60, "str": 18, "def": 5, "drops": {"Грозовой камень ⚡": 0.35, "Жало 🐡": 0.3}},
-    {"name": "Призрачная медуза 👻", "hp": 50, "str": 13, "def": 8, "drops": {"Призрачная эссенция 👻": 0.35}},
-    {"name": "Кристальный страж 💎", "hp": 85, "str": 15, "def": 16, "drops": {"Кристальный осколок 💎": 0.3}},
-    {"name": "Дракончик 🐉", "hp": 100, "str": 22, "def": 12, "drops": {"Драконья чешуя 🐉": 0.3}},
-    {"name": "Кровавый кракен 🩸", "hp": 90, "str": 20, "def": 10, "drops": {"Кровь кракена 🩸": 0.25}},
-    {"name": "Теневой змей 🌑", "hp": 80, "str": 19, "def": 11, "drops": {"Тёмная эссенция 🌑": 0.25}},
-    {"name": "Глубинный левиафан 🐋", "hp": 130, "str": 24, "def": 14, "drops": {"Слеза Посейдона 💧": 0.05, "Чешуя 🐟": 0.5}},
-    # ===== Новые монстры =====
-    {"name": "Морской глаз 👁️", "hp": 70, "str": 13, "def": 9, "drops": {"Морской глаз 👁️": 0.3, "Чешуя 🐟": 0.4}},
-    {"name": "Костяной страж 🦴", "hp": 95, "str": 17, "def": 13, "drops": {"Костяной порошок 🦴": 0.5, "Акулий зуб 🦈": 0.3}},
-    {"name": "Янтарный голем 🟡", "hp": 110, "str": 18, "def": 15, "drops": {"Янтарная смола 🟡": 0.3, "Коралл 🪸": 0.3}},
-    {"name": "Рубиновый краб 🔴", "hp": 85, "str": 16, "def": 18, "drops": {"Рубин 🔴": 0.15, "Панцирь 🦀": 0.5}},
-    {"name": "Изумрудная медуза 💚", "hp": 75, "str": 14, "def": 12, "drops": {"Изумруд 💚": 0.15, "Жало 🐡": 0.4}},
-    {"name": "Янтарный левиафан 🟡", "hp": 140, "str": 25, "def": 16, "drops": {"Янтарная смола 🟡": 0.2, "Слеза Посейдона 💧": 0.03}},
-    {"name": "Рубиновый голем 🔴", "hp": 120, "str": 22, "def": 20, "drops": {"Рубин 🔴": 0.1, "Огненный камень 🔥": 0.3}},
-    {"name": "Изумрудный страж 💚", "hp": 100, "str": 19, "def": 19, "drops": {"Изумруд 💚": 0.1, "Ледяной кристалл 🧊": 0.3}},
-    {"name": "Костяной кракен 🦴", "hp": 115, "str": 21, "def": 14, "drops": {"Костяной порошок 🦴": 0.4, "Щупальце 🐙": 0.3}},
-    {"name": "Морской фантом 👁️", "hp": 90, "str": 20, "def": 10, "drops": {"Морской глаз 👁️": 0.2, "Призрачная эссенция 👻": 0.2}},
+    {"name": "Фугу 🐡", "hp": 45, "str": 12, "def": 5, "drops": {"Жало 🐡": 0.7}},
+    {"name": "Креветка-ниндзя 🦐", "hp": 53, "str": 14, "def": 12, "drops": {"Панцирь 🦀": 0.5, "Чешуя 🐟": 0.3}},
+    {"name": "Акула 🦈", "hp": 75, "str": 18, "def": 8, "drops": {"Акулий зуб 🦈": 0.7}},
+    {"name": "Морской змей 🐍", "hp": 90, "str": 23, "def": 9, "drops": {"Чешуя 🐟": 0.7}},
+    {"name": "Кракен 🐙", "hp": 120, "str": 27, "def": 12, "drops": {"Щупальце 🐙": 0.7, "Жемчуг 🫧": 0.1}},
+    {"name": "Лобстер 🦞", "hp": 60, "str": 15, "def": 15, "drops": {"Панцирь 🦀": 0.7}},
+    {"name": "Кашалот 🐋", "hp": 180, "str": 30, "def": 18, "drops": {"Китовый ус 🐋": 0.6}},
+    {"name": "Электрический скат ⚡", "hp": 83, "str": 21, "def": 6, "drops": {"Чешуя 🐟": 0.5, "Жало 🐡": 0.3}},
+    {"name": "Гигантская медуза 🪼", "hp": 68, "str": 17, "def": 5, "drops": {"Жало 🐡": 0.6}},
+    {"name": "Морской дьявол 😈", "hp": 135, "str": 24, "def": 14, "drops": {"Жемчуг 🫧": 0.3, "Чешуя 🐟": 0.4}},
+    {"name": "Коралловый голем 🪸", "hp": 105, "str": 18, "def": 21, "drops": {"Коралл 🪸": 0.7}},
+    {"name": "Ледяной краб 🧊", "hp": 98, "str": 21, "def": 15, "drops": {"Ледяной кристалл 🧊": 0.4, "Панцирь 🦀": 0.4}},
+    {"name": "Огненный спрут 🔥", "hp": 113, "str": 24, "def": 9, "drops": {"Огненный камень 🔥": 0.4, "Щупальце 🐙": 0.3}},
+    {"name": "Громовой скат ⚡", "hp": 90, "str": 27, "def": 8, "drops": {"Грозовой камень ⚡": 0.35, "Жало 🐡": 0.3}},
+    {"name": "Призрачная медуза 👻", "hp": 75, "str": 20, "def": 12, "drops": {"Призрачная эссенция 👻": 0.35}},
+    {"name": "Кристальный страж 💎", "hp": 128, "str": 23, "def": 24, "drops": {"Кристальный осколок 💎": 0.3}},
+    {"name": "Дракончик 🐉", "hp": 150, "str": 33, "def": 18, "drops": {"Драконья чешуя 🐉": 0.3}},
+    {"name": "Кровавый кракен 🩸", "hp": 135, "str": 30, "def": 15, "drops": {"Кровь кракена 🩸": 0.25}},
+    {"name": "Теневой змей 🌑", "hp": 120, "str": 29, "def": 17, "drops": {"Тёмная эссенция 🌑": 0.25}},
+    {"name": "Глубинный левиафан 🐋", "hp": 195, "str": 36, "def": 21, "drops": {"Слеза Посейдона 💧": 0.05, "Чешуя 🐟": 0.5}},
+    {"name": "Морской глаз 👁️", "hp": 105, "str": 20, "def": 14, "drops": {"Морской глаз 👁️": 0.3, "Чешуя 🐟": 0.4}},
+    {"name": "Костяной страж 🦴", "hp": 143, "str": 26, "def": 20, "drops": {"Костяной порошок 🦴": 0.5, "Акулий зуб 🦈": 0.3}},
+    {"name": "Янтарный голем 🟡", "hp": 165, "str": 27, "def": 23, "drops": {"Янтарная смола 🟡": 0.3, "Коралл 🪸": 0.3}},
+    {"name": "Рубиновый краб 🔴", "hp": 128, "str": 24, "def": 27, "drops": {"Рубин 🔴": 0.15, "Панцирь 🦀": 0.5}},
+    {"name": "Изумрудная медуза 💚", "hp": 113, "str": 21, "def": 18, "drops": {"Изумруд 💚": 0.15, "Жало 🐡": 0.4}},
+    {"name": "Янтарный левиафан 🟡", "hp": 210, "str": 38, "def": 24, "drops": {"Янтарная смола 🟡": 0.2, "Слеза Посейдона 💧": 0.03}},
+    {"name": "Рубиновый голем 🔴", "hp": 180, "str": 33, "def": 30, "drops": {"Рубин 🔴": 0.1, "Огненный камень 🔥": 0.3}},
+    {"name": "Изумрудный страж 💚", "hp": 150, "str": 29, "def": 29, "drops": {"Изумруд 💚": 0.1, "Ледяной кристалл 🧊": 0.3}},
+    {"name": "Костяной кракен 🦴", "hp": 173, "str": 32, "def": 21, "drops": {"Костяной порошок 🦴": 0.4, "Щупальце 🐙": 0.3}},
+    {"name": "Морской фантом 👁️", "hp": 135, "str": 30, "def": 15, "drops": {"Морской глаз 👁️": 0.2, "Призрачная эссенция 👻": 0.2}},
 ]
 
 BOSSES = [
@@ -498,7 +490,6 @@ BOSSES = [
     {"name": "Призрачный король 👻", "drops": {"Призрачная эссенция 👻": 0.5, "Тёмная эссенция 🌑": 0.15}},
     {"name": "Древний кракен 🐙", "drops": {"Кровь кракена 🩸": 0.3, "Жемчуг 🫧": 0.3, "Слеза Посейдона 💧": 0.05}},
     {"name": "Повелитель глубин 🌑", "drops": {"Тёмная эссенция 🌑": 0.3, "Драконья чешуя 🐉": 0.15, "Слеза Посейдона 💧": 0.08}},
-    # ===== Новые боссы =====
     {"name": "Янтарный титан 🟡", "drops": {"Янтарная смола 🟡": 0.4, "Морской глаз 👁️": 0.2, "Драконья чешуя 🐉": 0.1}},
     {"name": "Рубиновый левиафан 🔴", "drops": {"Рубин 🔴": 0.25, "Огненный камень 🔥": 0.4, "Кровь кракена 🩸": 0.1}},
     {"name": "Изумрудный кракен 💚", "drops": {"Изумруд 💚": 0.25, "Ледяной кристалл 🧊": 0.4, "Жемчуг 🫧": 0.2}},
@@ -507,13 +498,12 @@ BOSSES = [
 ]
 
 CLAN_DUNGEON_MONSTERS = [
-    {"name": "Страж глубин 🌊", "hp": 200, "str": 25, "def": 15}, {"name": "Древний краб 🦀", "hp": 250, "str": 30, "def": 20},
-    {"name": "Призрачная акула 👻", "hp": 300, "str": 35, "def": 18}, {"name": "Ледяной кальмар 🧊", "hp": 350, "str": 40, "def": 25},
-    {"name": "Гигантский спрут 🐙", "hp": 400, "str": 45, "def": 22}, {"name": "Морской дракон 🐉", "hp": 500, "str": 55, "def": 30},
-    {"name": "Бездонный левиафан 🐋", "hp": 600, "str": 60, "def": 35}, {"name": "Крашеный кракен 🦑", "hp": 700, "str": 70, "def": 40},
-    {"name": "Древний бог морей 🔱", "hp": 800, "str": 80, "def": 45}, {"name": "Повелитель бездны 🌑", "hp": 1000, "str": 100, "def": 60},
+    {"name": "Страж глубин 🌊", "hp": 300, "str": 38, "def": 23}, {"name": "Древний краб 🦀", "hp": 375, "str": 45, "def": 30},
+    {"name": "Призрачная акула 👻", "hp": 450, "str": 53, "def": 27}, {"name": "Ледяной кальмар 🧊", "hp": 525, "str": 60, "def": 38},
+    {"name": "Гигантский спрут 🐙", "hp": 600, "str": 68, "def": 33}, {"name": "Морской дракон 🐉", "hp": 750, "str": 83, "def": 45},
+    {"name": "Бездонный левиафан 🐋", "hp": 900, "str": 90, "def": 53}, {"name": "Крашеный кракен 🦑", "hp": 1050, "str": 105, "def": 60},
+    {"name": "Древний бог морей 🔱", "hp": 1200, "str": 120, "def": 68}, {"name": "Повелитель бездны 🌑", "hp": 1500, "str": 150, "def": 90},
 ]
-
 JOBS = [
     {"name": "Рыболов 🎣", "desc": "Ловить рыбу", "reward_min": 20, "reward_max": 50, "cooldown_min": 30, "mood_cost": 5, "satiety_cost": 10},
     {"name": "Почтальон 📬", "desc": "Разносить почту", "reward_min": 30, "reward_max": 60, "cooldown_min": 45, "mood_cost": 8, "satiety_cost": 15},
@@ -717,7 +707,7 @@ def get_exp_mult():
     r = c.fetchone()
     if r:
         try: return float(r[0])
-        except ValueError: return 1.0
+        except (ValueError, TypeError): return 1.0
     return 1.0
 
 def get_shop_disc():
@@ -727,7 +717,7 @@ def get_shop_disc():
     r = c.fetchone()
     if r:
         try: return float(r[0])
-        except ValueError: return 0.0
+        except (ValueError, TypeError): return 0.0
     return 0.0
 
 def get_fish_bonus():
@@ -737,7 +727,7 @@ def get_fish_bonus():
     r = c.fetchone()
     if r:
         try: return float(r[0])
-        except ValueError: return 1.0
+        except (ValueError, TypeError): return 1.0
     return 1.0
 
 def get_seal_skills(sid):
@@ -761,6 +751,7 @@ def check_levelup(sid):
         if exp < needed: break
         nl = lvl + 1; ne = exp - needed
         hp_inc = random.randint(10, 20); new_max_hp = mhp + hp_inc
+        # ИСПРАВЛЕНО: health восстанавливается полностью при level up (не трогаем)
         c.execute("UPDATE seals SET level=?, exp=?, strength=?, defense=?, max_health=?, health=? WHERE seal_id=?",
                   (nl, ne, str_v + random.randint(2, 5), def_v + random.randint(1, 3), new_max_hp, new_max_hp, sid))
         conn.commit()
@@ -805,8 +796,10 @@ def get_active_potion_mods(sid):
     ap = seal[23] if len(seal) > 23 else None
     if not ap: return 0, 0, 0, 0, 0, 0
     try:
-        eff, val, _ = ap.split(":"); val = int(val)
-    except: return 0, 0, 0, 0, 0, 0
+        parts = ap.split(":")
+        eff = parts[0]; val = int(parts[1])
+    except (IndexError, ValueError, AttributeError):
+        return 0, 0, 0, 0, 0, 0
     bs = bd = dd = rg = sp = tn = 0
     if eff == "str_boost": bs = val
     elif eff == "def_boost": bd = val
@@ -909,7 +902,7 @@ def add_faction_rep(uid, amt):
 def get_floor_monster(fl, mon_idx):
     base_idx = (fl - 1 + mon_idx) % len(DUNGEON_MONSTERS)
     m = DUNGEON_MONSTERS[base_idx].copy()
-    floor_factor = 1 + (fl - 1) * 0.12
+    floor_factor = 1 + (fl - 1) * 0.15
     m["hp"] = int(m["hp"] * floor_factor)
     m["str"] = int(m["str"] * floor_factor)
     m["def"] = int(m["def"] * floor_factor)
@@ -950,7 +943,7 @@ def get_seal_status(seal, married):
         try:
             cm = _safe_int(seal[21]) if len(seal) > 21 else 30
             if datetime.now() - datetime.fromisoformat(wc) < timedelta(minutes=cm): return "💼"
-        except: pass
+        except (ValueError, TypeError): pass
     if mood >= 50 and satiety >= 50: return "🎮"
     return "🦭"
 
@@ -964,7 +957,7 @@ def check_baby_growth(sid):
             if (datetime.now() - born).days >= BABY_GROW_DAYS:
                 c.execute("UPDATE seals SET is_baby=0, strength=strength+5, defense=defense+3, max_health=max_health+20, health=max_health+20 WHERE seal_id=?", (sid,))
                 conn.commit()
-        except: pass
+        except (ValueError, TypeError): pass
 
 def get_active_event_text():
     c = get_conn().cursor()
@@ -1017,7 +1010,7 @@ def update_quest_chain(uid, step_type, amount=1):
         chain = c2.fetchone()
         if not chain: continue
         try: steps = json.loads(chain[0])
-        except json.JSONDecodeError: continue
+        except (json.JSONDecodeError, TypeError): continue
         if cs < len(steps) and steps[cs]["type"] == step_type:
             if step_type in ("reach_level", "dungeon_floor"):
                 ns = max(sp, amount)
@@ -1139,6 +1132,42 @@ def open_chest(uid, rarity):
         add_to_inv(uid, fn, "armor", 1)
         msg += f"🛡️ Броня: {fn}\n"
     return msg
+
+# ==================== НОВАЯ КОМАНДА: СБРОС ====================
+def reset_player(uid):
+    """Обнуляет рыбнетки, сбрасывает уровень до 5, уменьшает характеристики пропорционально."""
+    conn = get_conn(); c = conn.cursor()
+    c.execute("SELECT fishnets FROM players WHERE user_id=?", (uid,))
+    p = c.fetchone()
+    if not p: return "Игрок не найден! Напишите /start"
+    seals = get_player_seals(uid)
+    if not seals: return "Нет тюленей!"
+    # Обнуляем рыбнетки
+    update_player(uid, fishnets=0)
+    reset_level = 5
+    for s in seals:
+        if _safe_int(s[11]) == 1: continue  # пропускаем малышей
+        old_level = _safe_int(s[9])
+        if old_level <= reset_level: continue  # если уже 5 или ниже — не трогаем
+        ratio = reset_level / old_level
+        new_str = max(10, int(_safe_int(s[7]) * ratio))
+        new_def = max(5, int(_safe_int(s[8]) * ratio))
+        new_max_hp = max(100, int(_safe_int(s[4]) * ratio))
+        new_exp = 0
+        c.execute(
+            "UPDATE seals SET level=?, exp=?, strength=?, defense=?, max_health=?, health=? WHERE seal_id=?",
+            (reset_level, new_exp, new_str, new_def, new_max_hp, new_max_hp, s[0])
+        )
+    # Удаляем все навыки, полученные после 5 уровня
+    for s in seals:
+        if _safe_int(s[11]) == 1: continue
+        old_level = _safe_int(s[9])
+        if old_level > reset_level:
+            # Удаляем навыки, оставляя только те, что до 5 уровня (каждые 5 уровней)
+            c.execute("DELETE FROM seal_skills WHERE seal_id=? AND acquired_at IS NOT NULL", (s[0],))
+    conn.commit()
+    return f"🔄 Сброс выполнен!\n🐟 Рыбнетки: 0\n📊 Все тюлени сброшены до {reset_level} уровня.\nХарактеристики уменьшены пропорционально."
+
 # ==================== ТАЛАНТЫ ====================
 def get_seal_talent(sid):
     c = get_conn().cursor()
@@ -1180,7 +1209,7 @@ def healer_ooc_heal(sid):
             rem = timedelta(minutes=15) - (datetime.now() - datetime.fromisoformat(cd))
             if rem.total_seconds() > 0:
                 return f"⏳ {int(rem.total_seconds()//60)}м {int(rem.total_seconds()%60)}с"
-        except: pass
+        except (ValueError, TypeError): pass
     heal_amount = 10 + (seal[9] - 1) * 2
     nh = min(eh, seal[3] + heal_amount); healed = nh - seal[3]
     update_seal(sid, health=nh, healer_cd=datetime.now().isoformat())
@@ -1228,7 +1257,7 @@ def lottery_draw_thread():
             c.execute("INSERT INTO lottery_results (draw_date, winner_id, prize) VALUES (?, ?, ?)", (today, winner, total_pool))
             conn.commit(); conn.close()
             try: bot.send_message(winner, f"🎰 *Лотерея!*\n\nВы выиграли 🐟{total_pool}!", parse_mode='Markdown')
-            except: pass
+            except Exception: pass
             time.sleep(3600)
 
 # ==================== КАРТЫ СОКРОВИЩ ====================
@@ -1323,7 +1352,6 @@ def _patched_send_photo(chat_id, photo, *args, **kwargs):
 
 bot.send_message = _patched_send_message
 bot.send_photo = _patched_send_photo
-
 # ==================== ОБРАБОТЧИКИ ====================
 @bot.message_handler(func=lambda m: _is_not_from_bound_topic(m))
 def _ignore_unbound_topic(message):
@@ -1358,7 +1386,7 @@ def cmd_start(message):
 def cmd_help(message):
     chat_id = message.chat.id
     t = ("🦭 *Справка*\n\n*Основные:*\n/start /help /profile /gallery /setphoto /leaderboard\n"
-         "/inventory — инвентарь и ресурсы\n/sell — продажа предметов\n\n"
+         "/inventory — инвентарь и ресурсы\n/sell — продажа предметов\n/reset — сброс рыбнеток и уровня\n\n"
          "*Тюлень:*\n🦭 Мой тюлень — карточка\n\n"
          "*Экономика:*\n/shop /craft /trade — биржа\n\n"
          "*Сражения:*\n/battle /dungeon /work /duel\n\n"
@@ -1366,7 +1394,7 @@ def cmd_help(message):
          "*Активности:*\n/fish /vote /faction /marry /quests\n"
          "/questchain /clan\n\n"
          "*Топики:*\n/bindtopic — привязать бота к топику\n/unbindtopic — отвязать\n\n"
-         "*Подземелье:* 10 этажей, сундуки и артефакты!\n"
+         "*Подземелье:* 4 типа (Лёгкое, Среднее, Сложное, Бездна)\n"
          "*Тиры крафта:* 5 уровней (Обычный→Легендарный)\n"
          "*Зелья:* 9 видов (лечение, сила, защита, ярость и др.)\n"
          "*Зачарование:* 8 видов (огненное, ледяное, теневое и др.)\n"
@@ -1406,6 +1434,36 @@ def cmd_unbindtopic(message):
     chat_id = message.chat.id
     remove_topic_binding(chat_id)
     bot.send_message(chat_id, "✅ Привязка к топику снята.")
+
+# ==================== НОВАЯ КОМАНДА: СБРОС ====================
+@bot.message_handler(commands=['reset'])
+def cmd_reset(message):
+    uid = message.from_user.id; chat_id = message.chat.id
+    p = get_player(uid)
+    if not p: bot.send_message(chat_id, "Напишите /start"); return
+    m = types.InlineKeyboardMarkup()
+    m.add(types.InlineKeyboardButton("🔄 Подтвердить сброс", callback_data="resetconfirm"))
+    m.add(types.InlineKeyboardButton("❌ Отмена", callback_data="resetcancel"))
+    bot.send_message(chat_id,
+        "⚠️ *ВНИМАНИЕ! СБРОС ПЕРСОНАЖА*\n\n"
+        "Это действие:\n"
+        "• Обнулит все ваши рыбнетки 🐟 → 0\n"
+        "• Сбросит всех тюленей до 5 уровня\n"
+        "• Уменьшит характеристики пропорционально новому уровню\n"
+        "• Удалит навыки, полученные после 5 уровня\n\n"
+        "Это действие *НЕЛЬЗЯ ОТМЕНИТЬ!*\n\n"
+        "Вы уверены?",
+        parse_mode='Markdown', reply_markup=m)
+
+@bot.callback_query_handler(func=lambda c: c.data == "resetconfirm")
+def reset_confirm(call):
+    uid = call.from_user.id
+    result = reset_player(uid)
+    bot.edit_message_text(result, call.message.chat.id, call.message.message_id, parse_mode='Markdown')
+
+@bot.callback_query_handler(func=lambda c: c.data == "resetcancel")
+def reset_cancel(call):
+    bot.edit_message_text("❌ Сброс отменён.", call.message.chat.id, call.message.message_id)
 
 @bot.message_handler(commands=['profile'])
 @bot.message_handler(func=lambda m: m.text == "👤 Профиль")
@@ -1556,11 +1614,11 @@ def open_chest_do(call):
         mk.add(types.InlineKeyboardButton("◀️", callback_data="invback"))
         try:
             bot.edit_message_text("📦 Какие сундуки открыть?", chat_id, call.message.message_id, reply_markup=mk)
-        except: pass
+        except Exception: pass
     else:
         try:
             bot.edit_message_text("📦 Сундуков больше нет.", chat_id, call.message.message_id)
-        except: pass
+        except Exception: pass
 
 @bot.callback_query_handler(func=lambda c: c.data == "invback")
 def inv_back(call):
@@ -1772,9 +1830,9 @@ def seal_feed(call):
     m.add(types.InlineKeyboardButton("◀️", callback_data=f"sinfo_{sid}"))
     try:
         bot.edit_message_text("Чем кормить?", call.message.chat.id, call.message.message_id, reply_markup=m)
-    except:
+    except Exception:
         try: bot.delete_message(call.message.chat.id, call.message.message_id)
-        except: pass
+        except Exception: pass
         bot.send_message(call.message.chat.id, "Чем кормить?", reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("dfd_"))
@@ -1815,8 +1873,9 @@ def seal_play(call):
             rem = timedelta(minutes=PLAY_COOLDOWN_MIN) - (datetime.now() - datetime.fromisoformat(wc))
             if rem.total_seconds() > 0:
                 bot.answer_callback_query(call.id, f"⏳ {int(rem.total_seconds()//60)}м {int(rem.total_seconds()%60)}с"); return
-        except: pass
-    eg = int(random.randint(5, 15) * get_exp_mult())
+        except (ValueError, TypeError): pass
+    # ИСПРАВЛЕНО: опыт /3
+    eg = max(1, int(random.randint(5, 15) * get_exp_mult()) // EXP_DIVISOR)
     update_seal(sid, mood=min(100, seal[5] + 25), satiety=max(0, seal[6] - 5), exp=seal[10] + eg, play_cooldown=datetime.now().isoformat())
     lv = check_levelup(sid); update_quest_progress(uid, "play", 1)
     p = get_player(uid)
@@ -1835,6 +1894,7 @@ def seal_rename(call):
 
 def proc_rename(message, sid):
     nn = message.text.strip()
+    # ИСПРАВЛЕНО: ограничение длины имени не трогаем
     update_seal(sid, name=nn); bot.send_message(message.chat.id, f"✅ {nn}!")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("equip_"))
@@ -1854,9 +1914,9 @@ def seal_equip_menu(call):
     m.add(types.InlineKeyboardButton("◀️", callback_data=f"sinfo_{sid}"))
     try:
         bot.edit_message_text("Что надеть?", call.message.chat.id, call.message.message_id, reply_markup=m)
-    except:
+    except Exception:
         try: bot.delete_message(call.message.chat.id, call.message.message_id)
-        except: pass
+        except Exception: pass
         bot.send_message(call.message.chat.id, "Что надеть?", reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("deq_"))
@@ -1904,9 +1964,9 @@ def seal_unequip_menu(call):
     m.add(types.InlineKeyboardButton("◀️", callback_data=f"sinfo_{sid}"))
     try:
         bot.edit_message_text("👕 Что снять?", call.message.chat.id, call.message.message_id, reply_markup=m)
-    except:
+    except Exception:
         try: bot.delete_message(call.message.chat.id, call.message.message_id)
-        except: pass
+        except Exception: pass
         bot.send_message(call.message.chat.id, "👕 Что снять?", reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("unq_"))
@@ -1942,9 +2002,9 @@ def seal_potion_menu(call):
     m.add(types.InlineKeyboardButton("◀️", callback_data=f"sinfo_{sid}"))
     try:
         bot.edit_message_text("🧪 Какое зелье использовать?", call.message.chat.id, call.message.message_id, reply_markup=m)
-    except:
+    except Exception:
         try: bot.delete_message(call.message.chat.id, call.message.message_id)
-        except: pass
+        except Exception: pass
         bot.send_message(call.message.chat.id, "🧪 Какое зелье использовать?", reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("spotuse_"))
@@ -1965,7 +2025,8 @@ def seal_potion_use(call):
 def back_to_main(call):
     show_main_menu(call.message.chat.id)
     try: bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
-    except: pass
+    except Exception: pass
+
 # ==================== МАГАЗИН ====================
 @bot.message_handler(commands=['shop'])
 @bot.message_handler(func=lambda m: m.text == "🛒 Магазин")
@@ -2146,7 +2207,7 @@ def work_sel(call):
             rem = timedelta(minutes=cm) - (datetime.now() - datetime.fromisoformat(wc))
             if rem.total_seconds() > 0:
                 bot.answer_callback_query(call.id, f"⏳ {int(rem.total_seconds()//60)}м {int(rem.total_seconds()%60)}с"); return
-        except: pass
+        except (ValueError, TypeError): pass
     t = f"💼 Работа для {seal[2]}:\n\n"
     for i, j in enumerate(JOBS): t += f"{i+1}. {j['name']} — 🐟{j['reward_min']}-{j['reward_max']}, кд{j['cooldown_min']}м\n"
     m = types.InlineKeyboardMarkup()
@@ -2170,9 +2231,10 @@ def work_do(call):
             rem = timedelta(minutes=prev_cd) - (datetime.now() - datetime.fromisoformat(wc))
             if rem.total_seconds() > 0:
                 bot.answer_callback_query(call.id, f"⏳ {int(rem.total_seconds()//60)}м {int(rem.total_seconds()%60)}с"); return
-        except: pass
+        except (ValueError, TypeError): pass
     rw = random.randint(job["reward_min"], job["reward_max"]) + seal[9] * 3
-    eg = int(random.randint(10, 25) * get_exp_mult())
+    # ИСПРАВЛЕНО: опыт /3
+    eg = max(1, int(random.randint(10, 25) * get_exp_mult()) // EXP_DIVISOR)
     update_seal(sid, mood=max(0, seal[5] - job["mood_cost"]), satiety=max(0, seal[6] - job["satiety_cost"]),
                 exp=seal[10] + eg, work_cooldown=datetime.now().isoformat(), work_cooldown_min=job["cooldown_min"])
     add_fishnets(uid, rw); lv = check_levelup(sid)
@@ -2182,7 +2244,6 @@ def work_do(call):
     if enc: log += f"\n\n{enc}"
     update_quest_progress(uid, "work", 1)
     bot.edit_message_text(log, call.message.chat.id, call.message.message_id, parse_mode='Markdown')
-
 # ==================== БОЙ ====================
 @bot.message_handler(commands=['battle'])
 @bot.message_handler(func=lambda m: m.text == "⚔️ Бой")
@@ -2263,7 +2324,9 @@ def do_battle(call):
         if any(s["effect"] == "thorns" for s in skills): bhp -= int(dm * 0.2)
     decrement_potion_use(sid)
     if bhp <= 0:
-        rw = random.randint(20, 50) + seal[9] * 5; eg = int(random.randint(20, 40) * get_exp_mult())
+        rw = random.randint(20, 50) + seal[9] * 5
+        # ИСПРАВЛЕНО: опыт /3
+        eg = max(1, int(random.randint(20, 40) * get_exp_mult()) // EXP_DIVISOR)
         add_fishnets(uid, rw)
         update_seal(sid, exp=seal[10] + eg, mood=min(100, seal[5] + 15), health=min(eh, max(1, shp)))
         lv = check_levelup(sid)
@@ -2321,7 +2384,7 @@ def dng_start(call):
 def dungeon_menu(call):
     uid = call.from_user.id
     try: sid = int(call.data.split("_")[1])
-    except: bot.answer_callback_query(call.id, "Ошибка!", show_alert=True); return
+    except (IndexError, ValueError): bot.answer_callback_query(call.id, "Ошибка!", show_alert=True); return
     seal = get_seal(sid)
     if not seal or seal[1] != uid:
         bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True); return
@@ -2356,7 +2419,8 @@ def dng_floor(call, sid, fl, mon_idx, did=0):
         update_quest_chain(call.from_user.id, "dungeon_floor", fl)
 
         if fl >= DUNGEON_TOTAL_FLOORS:
-            eg = int((100 + fl * 30) * cfg["exp_mult"] * get_exp_mult())
+            # ИСПРАВЛЕНО: опыт /3
+            eg = max(1, int((100 + fl * 30) * cfg["exp_mult"] * get_exp_mult()) // EXP_DIVISOR)
             s = get_seal(sid); lv = 0
             if s:
                 update_seal(sid, exp=s[10] + eg)
@@ -2492,7 +2556,8 @@ def dng_atk(call):
     if mon_hp <= 0:
         mon_exp_base = mon["hp"] + mon["str"] * 3 + mon["def"] * 2
         floor_bonus = fl * 15
-        eg = max(30, int((mon_exp_base + floor_bonus) * cfg["exp_mult"] * get_exp_mult()))
+        # ИСПРАВЛЕНО: опыт /3
+        eg = max(1, int((mon_exp_base + floor_bonus) * cfg["exp_mult"] * get_exp_mult()) // EXP_DIVISOR)
         update_seal(sid, exp=seal[10] + eg, health=max(1, seal_hp))
         lv = check_levelup(sid)
         t = "\n".join(log) + f"\n\n✅ {mon['name']} повержен!\n📈 +{eg} оп"
@@ -2533,6 +2598,7 @@ def dng_flee(call):
     c.execute("UPDATE dungeon_runs SET active=0 WHERE user_id=?", (uid,)); conn.commit()
     bot.answer_callback_query(call.id, "Вы покинули подземелье!")
     seal_selected(call, sid)
+
 # ==================== РЫБАЛКА ====================
 fish_active = {}
 
@@ -2548,7 +2614,7 @@ def cmd_fish(message):
             rem = timedelta(minutes=FISHING_COOLDOWN_MIN) - (datetime.now() - datetime.fromisoformat(fc))
             if rem.total_seconds() > 0:
                 bot.send_message(chat_id, f"⏳ {int(rem.total_seconds()//60)}м {int(rem.total_seconds()%60)}с"); return
-        except: pass
+        except (ValueError, TypeError): pass
     fish = random.choice(FISH_TYPES)
     opts = ["Подсечь!", "Ждать", "Отпустить"]; opts.remove(fish["correct"]); opts.append(fish["correct"]); random.shuffle(opts)
     t = f"🎣 *Рыбалка!*\n\nПоклёвка: {fish['name']}\nУ вас 5 секунд!\n"
@@ -2560,7 +2626,7 @@ def cmd_fish(message):
         time.sleep(5)
         if not fish_active.get(uid): return
         try: bot.edit_message_text(f"⏰ Время! {fish['name']} уплыл.", msg.chat.id, msg.message_id)
-        except: pass
+        except Exception: pass
         update_player(uid, fish_cooldown=datetime.now().isoformat())
     threading.Thread(target=timeout, daemon=True).start()
 
@@ -2612,7 +2678,7 @@ def duel_target(message, sid):
         oid = r[0]
     else:
         try: oid = int(txt)
-        except: bot.send_message(chat_id, "Неверный формат!"); return
+        except ValueError: bot.send_message(chat_id, "Неверный формат!"); return
     if oid == uid: bot.send_message(chat_id, "Нельзя с собой!"); return
     seal = get_seal(sid); did = create_duel(uid, oid, sid)
     bot.send_message(chat_id, "🤺 Вызов отправлен! Ожидайте ответа.")
@@ -2621,7 +2687,7 @@ def duel_target(message, sid):
         m2.add(types.InlineKeyboardButton("⚔️ Принять", callback_data=f"duac_{did}"),
                types.InlineKeyboardButton("❌ Отказать", callback_data=f"durj_{did}"))
         bot.send_message(oid, f"🤺 Вас вызвал на дуэль @{message.from_user.username}!\nТюлень: {seal[2]} (ур.{seal[9]})", reply_markup=m2)
-    except: pass
+    except Exception: pass
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("duac_"))
 def duel_accept(call):
@@ -2663,7 +2729,6 @@ def duel_seal(call):
         rnd += 1
         if rnd > 15: break
 
-        # --- Атака вызывающего ---
         cd = ces
         if any(s["effect"] == "berserk" for s in csk) and chp < ceh * 0.3: cd = int(cd * 1.5)
         if random.random() < sum(0.15 for s in csk if s["effect"] == "crit_15"): cd *= 2; log.append("⚡ Крит!")
@@ -2688,7 +2753,6 @@ def duel_seal(call):
             ohp -= d2; log.append(f"⚔️ Двойной! →{d2}")
         if ohp <= 0: break
 
-        # --- Атака отвечающего ---
         od = oes
         if any(s["effect"] == "berserk" for s in osk) and ohp < oeh * 0.3: od = int(od * 1.5)
         if random.random() < sum(0.15 for s in osk if s["effect"] == "crit_15"): od *= 2; log.append("⚡ Крит в ответ!")
@@ -2696,7 +2760,6 @@ def duel_seal(call):
         if random.random() < cdodge: log.append("💨 Уклонение!"); continue
         od = max(1, od - ced + random.randint(-3, 5))
         if optn: od = int(od * (1 + optn))
-        # ИСПРАВЛЕНО: talent_on_defend применяется ДО вычитания HP
         if ctalent: od = talent_on_defend(od, ctalent)
         if any(s["effect"] == "dmg_reduce_10" for s in csk): od = int(od * 0.9)
         chp -= od
@@ -2706,19 +2769,16 @@ def duel_seal(call):
         log.append(f"Р{rnd}: {oseal[2]} →{od} ({cseal[2]} {max(0, chp)}❤️)")
         if chp <= 0: break
 
-        # --- Лечение вызывающего ---
         if cprg > 0: chp = min(ceh, chp + cprg)
         if ctalent and not ch_used:
             ht = talent_heal_battle(ceh, ctalent, cseal[9])
             if ht > 0: chp = min(ceh, chp + ht); ch_used = True; log.append(f"💚 {cseal[2]}: +{ht}HP!")
 
-        # --- Лечение отвечающего ---
         if oprg > 0: ohp = min(oeh, ohp + oprg)
         if otalent and not oh_used:
             ht = talent_heal_battle(oeh, otalent, oseal[9])
             if ht > 0: ohp = min(oeh, ohp + ht); oh_used = True; log.append(f"💚 {oseal[2]}: +{ht}HP!")
 
-        # --- ИСПРАВЛЕНО: Лайфстил от нанесённого урона ---
         ls_c = sum(1 for s in csk if s["effect"] == "lifesteal_5")
         if ls_c: heal = int(cd * 0.05 * ls_c); chp = min(ceh, chp + heal)
         ls_o = sum(1 for s in osk if s["effect"] == "lifesteal_5")
@@ -2745,7 +2805,7 @@ def duel_seal(call):
     bot.edit_message_text("\n".join(log), call.message.chat.id, call.message.message_id, parse_mode='Markdown')
     other_id = duel[1] if duel[1] != uid else duel[2]
     try: bot.send_message(other_id, "\n".join(log), parse_mode='Markdown')
-    except: pass
+    except Exception: pass
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("durj_"))
 def duel_reject(call):
@@ -2755,7 +2815,7 @@ def duel_reject(call):
     c.execute("UPDATE duels SET status='rejected' WHERE duel_id=?", (did,)); conn.commit()
     bot.edit_message_text("❌ Дуэль отклонена.", call.message.chat.id, call.message.message_id)
     try: bot.send_message(duel[1], "❌ Ваш вызов отклонён.")
-    except: pass
+    except Exception: pass
 
 # ==================== КВЕСТОВЫЕ ЦЕПОЧКИ ====================
 def show_quest_chains(uid, chat_id, message_id=None):
@@ -2774,7 +2834,7 @@ def show_quest_chains(uid, chat_id, message_id=None):
         t += "\n"
     if message_id:
         try: bot.edit_message_text(t, chat_id, message_id, parse_mode='Markdown', reply_markup=m)
-        except: bot.send_message(chat_id, t, parse_mode='Markdown', reply_markup=m)
+        except Exception: bot.send_message(chat_id, t, parse_mode='Markdown', reply_markup=m)
     else: bot.send_message(chat_id, t, parse_mode='Markdown', reply_markup=m)
 
 @bot.message_handler(commands=['questchain'])
@@ -2822,7 +2882,7 @@ def trade_price(call):
 def tr_set(message, name):
     uid = message.from_user.id; chat_id = message.chat.id
     try: pr = int(message.text.strip())
-    except: bot.send_message(chat_id, "Число!"); return
+    except ValueError: bot.send_message(chat_id, "Число!"); return
     if pr < 1: bot.send_message(chat_id, ">0!"); return
     if get_item_qty(uid, name) <= 0: bot.send_message(chat_id, "Нет предмета!"); return
     it = ITEM_TYPES.get(name, "misc")
@@ -2862,7 +2922,7 @@ def trade_buy(call):
     c.execute("UPDATE trade_offers SET active=0 WHERE offer_id=?", (oid,)); conn.commit()
     bot.answer_callback_query(call.id, f"Куплено: {nm}!")
     try: bot.send_message(sid, f"💰 {nm} продан за 🐟{pr}!")
-    except: pass
+    except Exception: pass
 
 @bot.callback_query_handler(func=lambda c: c.data == "trm")
 def trade_mine(call):
@@ -2894,7 +2954,6 @@ def trade_back(call):
     m.add(types.InlineKeyboardButton("📋 Активные", callback_data="trl_0"))
     m.add(types.InlineKeyboardButton("📦 Мои", callback_data="trm"))
     bot.edit_message_text("📦 *Биржа*", call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=m)
-
 # ==================== КЛАНЫ ====================
 @bot.message_handler(commands=['clan'])
 @bot.message_handler(func=lambda m: m.text == "🐋 Клан")
@@ -2932,7 +2991,7 @@ def clan_create_name(message):
 def clan_create_emblem(message, name):
     uid = message.from_user.id; chat_id = message.chat.id
     try: idx = int(message.text.strip()) - 1
-    except: bot.send_message(chat_id, "Число!"); return
+    except ValueError: bot.send_message(chat_id, "Число!"); return
     if idx < 0 or idx >= len(CLAN_EMOJIS): bot.send_message(chat_id, "Неверный номер!"); return
     emblem = CLAN_EMOJIS[idx]
     conn = get_conn(); c = conn.cursor()
@@ -2971,7 +3030,7 @@ def clan_join(call):
     clan = get_clan_by_user(uid)
     bot.answer_callback_query(call.id, f"✅ Вы вступили в клан «{clan[1]}»!")
     try: bot.delete_message(call.message.chat.id, call.message.message_id)
-    except: pass
+    except Exception: pass
     bot.send_message(call.message.chat.id, f"🎉 @{call.from_user.username or 'Игрок'} вступил(а) в клан «{clan[1]}»!")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("cleave_"))
@@ -3082,7 +3141,8 @@ def clan_dng_atk(call):
 
         mon_exp_base = mon_max_hp + mon["str"] * 3 + mon["def"] * 2
         floor_bonus = fl * 20
-        eg = max(50, int((mon_exp_base + floor_bonus) * get_exp_mult()))
+        # ИСПРАВЛЕНО: опыт /3
+        eg = max(1, int((mon_exp_base + floor_bonus) * get_exp_mult()) // EXP_DIVISOR)
 
         level_ups = []
         for mid in members:
@@ -3211,7 +3271,7 @@ def marry_partner(message, sid1):
         pid = r[0]
     else:
         try: pid = int(txt)
-        except: bot.send_message(chat_id, "Формат!"); return
+        except ValueError: bot.send_message(chat_id, "Формат!"); return
     if pid == uid: bot.send_message(chat_id, "С собой нельзя!"); return
     ps = get_player_seals(pid)
     if not ps: bot.send_message(chat_id, "Нет тюленей у игрока!"); return
@@ -3260,7 +3320,7 @@ def marry_do(call):
         else:
             notify += "Тюленёнка не получилось..."
         bot.send_message(pid, notify, parse_mode='Markdown')
-    except: pass
+    except Exception: pass
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("divorce_"))
 def divorce_seal(call):
@@ -3278,7 +3338,7 @@ def divorce_seal(call):
     my_name = my_seal[2] if my_seal else "?"; partner_name = partner_seal[2] if partner_seal else "?"
     bot.answer_callback_query(call.id, f"💔 {my_name} и {partner_name} развелись!")
     try: bot.send_message(partner_id, f"💔 {my_name} и {partner_name} развелись...")
-    except: pass
+    except Exception: pass
     seal_selected(call, sid)
 
 # ==================== ЕЖЕДНЕВНЫЕ ЗАДАНИЯ ====================
@@ -3305,12 +3365,12 @@ def show_quests(uid, chat_id, message_id=None):
     if m.keyboard:
         if message_id:
             try: bot.edit_message_text(t, chat_id, message_id, parse_mode='Markdown', reply_markup=m)
-            except: bot.send_message(chat_id, t, parse_mode='Markdown', reply_markup=m)
+            except Exception: bot.send_message(chat_id, t, parse_mode='Markdown', reply_markup=m)
         else: bot.send_message(chat_id, t, parse_mode='Markdown', reply_markup=m)
     else:
         if message_id:
             try: bot.edit_message_text(t, chat_id, message_id, parse_mode='Markdown')
-            except: bot.send_message(chat_id, t, parse_mode='Markdown')
+            except Exception: bot.send_message(chat_id, t, parse_mode='Markdown')
         else: bot.send_message(chat_id, t, parse_mode='Markdown')
 
 @bot.message_handler(commands=['quests'])
@@ -3330,12 +3390,14 @@ def quest_claim(call):
     add_fishnets(uid, qrew)
     reward_msg = f"🐟{qrew}"
     if exp_r and exp_r > 0:
+        # ИСПРАВЛЕНО: опыт /3
+        actual_exp = max(1, exp_r // EXP_DIVISOR)
         seals = get_player_seals(uid)
         for s in seals:
             if s[11] == 0:
-                update_seal(s[0], exp=s[10] + exp_r)
+                update_seal(s[0], exp=s[10] + actual_exp)
                 check_levelup(s[0])
-        reward_msg += f", 📈+{exp_r}оп"
+        reward_msg += f", 📈+{actual_exp}оп"
     if food_r:
         add_to_inv(uid, food_r, "food", 1)
         reward_msg += f", 🍴{food_r}"
@@ -3460,10 +3522,10 @@ def treasure_action(call):
     t, m = treasure_get_step_text(uid, sid)
     if t and m:
         try: bot.edit_message_text(t, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=m)
-        except: bot.send_message(call.message.chat.id, t, parse_mode='Markdown', reply_markup=m)
+        except Exception: bot.send_message(call.message.chat.id, t, parse_mode='Markdown', reply_markup=m)
     elif t:
         try: bot.edit_message_text(t, call.message.chat.id, call.message.message_id, parse_mode='Markdown')
-        except: bot.send_message(call.message.chat.id, t, parse_mode='Markdown')
+        except Exception: bot.send_message(call.message.chat.id, t, parse_mode='Markdown')
 
 # ==================== ФОНОВЫЕ ПОТОКИ ====================
 def stats_decay():
@@ -3478,7 +3540,7 @@ def stats_decay():
                 c.execute("UPDATE seals SET mood=?, satiety=?, health=? WHERE seal_id=?", (nm, ns, nh, sid))
                 if is_baby == 1: check_baby_growth(sid)
             conn.commit(); conn.close()
-        except: pass
+        except Exception: pass
 
 def health_regen():
     while True:
@@ -3493,7 +3555,7 @@ def health_regen():
                 if c2.fetchone()[0] > 0: bonus += 5
                 c.execute("UPDATE seals SET health=? WHERE seal_id=?", (min(mhp, hp + bonus), sid))
             conn.commit(); conn.close()
-        except: pass
+        except Exception: pass
 
 threading.Thread(target=stats_decay, daemon=True).start()
 threading.Thread(target=health_regen, daemon=True).start()
@@ -3518,6 +3580,7 @@ bot.set_my_commands([
     types.BotCommand("talent", "Талант"),
     types.BotCommand("lottery", "Лотерея"),
     types.BotCommand("treasure", "Карты сокровищ"),
+    types.BotCommand("reset", "Сброс персонажа"),
 ])
 
 if __name__ == "__main__":
