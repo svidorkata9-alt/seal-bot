@@ -2841,6 +2841,7 @@ def menu_clan(message):
         if clan[3] == uid:
             m.add(types.InlineKeyboardButton("🏰 Клановое подземелье", callback_data=f"cds_{cid}"))
             m.add(types.InlineKeyboardButton("📋 Участники", callback_data=f"cmem_{cid}"))
+            m.add(types.InlineKeyboardButton("📨 Пригласить", callback_data=f"cinv_{cid}"))
         m.add(types.InlineKeyboardButton("🚪 Покинуть", callback_data=f"cleave_{cid}"))
         bot.send_message(chat_id, t, parse_mode='Markdown', reply_markup=m)
     else:
@@ -2873,6 +2874,38 @@ def clan_create_emblem(message, name):
     c.execute("INSERT INTO clan_members (clan_id, user_id, joined_at) VALUES (?, ?, ?)", (cid, uid, datetime.now().isoformat()))
     conn.commit()
     bot.send_message(chat_id, f"✅ Клан {name} {emblem} создан!")
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("cinv_"))
+def clan_invite(call):
+    uid = call.from_user.id; cid = int(call.data.split("_")[1])
+    clan = get_clan_by_user(uid)
+    if not clan or clan[3] != uid:
+        bot.answer_callback_query(call.id, "Только лидер может приглашать!", show_alert=True); return
+    members = get_clan_members(cid)
+    if len(members) >= MAX_CLAN_MEMBERS:
+        bot.answer_callback_query(call.id, "Клан заполнен!", show_alert=True); return
+    m = types.InlineKeyboardMarkup()
+    m.add(types.InlineKeyboardButton(f"🐋 Вступить в «{clan[1]}»", callback_data=f"cjoin_{cid}"))
+    bot.send_message(call.message.chat.id, f"📨 Лидер @{clan[3]} приглашает в клан *{clan[1]} {clan[2]}*!\nНажмите, чтобы вступить:", parse_mode='Markdown', reply_markup=m)
+    bot.answer_callback_query(call.id, "Приглашение отправлено!")
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("cjoin_"))
+def clan_join(call):
+    uid = call.from_user.id; cid = int(call.data.split("_")[1])
+    existing = get_clan_by_user(uid)
+    if existing:
+        bot.answer_callback_query(call.id, "Вы уже в клане! Сначала покиньте текущий.", show_alert=True); return
+    members = get_clan_members(cid)
+    if len(members) >= MAX_CLAN_MEMBERS:
+        bot.answer_callback_query(call.id, "Клан заполнен!", show_alert=True); return
+    conn = get_conn(); c = conn.cursor()
+    c.execute("INSERT INTO clan_members (clan_id, user_id, joined_at) VALUES (?, ?, ?)", (cid, uid, datetime.now().isoformat()))
+    conn.commit()
+    clan = get_clan_by_user(uid)
+    bot.answer_callback_query(call.id, f"✅ Вы вступили в клан «{clan[1]}»!")
+    try: bot.delete_message(call.message.chat.id, call.message.message_id)
+    except: pass
+    bot.send_message(call.message.chat.id, f"🎉 @{call.from_user.username or 'Игрок'} вступил(а) в клан «{clan[1]}»!")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("cleave_"))
 def clan_leave(call):
@@ -2980,7 +3013,6 @@ def clan_dng_atk(call):
         log.append("\n✅ Монстр повержен!")
         rw = 200 + fl * 50
 
-        # ===== ОПЫТ ЗА МОНСТРА (зависит от силы) =====
         mon_exp_base = mon_max_hp + mon["str"] * 3 + mon["def"] * 2
         floor_bonus = fl * 20
         eg = max(50, int((mon_exp_base + floor_bonus) * get_exp_mult()))
@@ -3014,7 +3046,6 @@ def clan_dng_atk(call):
         conn = get_conn(); c = conn.cursor()
         c.execute("UPDATE clan_dungeons SET active=0 WHERE clan_id=?", (cid,)); conn.commit()
         bot.edit_message_text("\n".join(log), call.message.chat.id, call.message.message_id, parse_mode='Markdown')
-
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("cdn_"))
 def clan_dng_next(call):
