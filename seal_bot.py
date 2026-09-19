@@ -1042,20 +1042,22 @@ def set_seal_talent(sid, talent):
     c.execute("INSERT OR REPLACE INTO seal_talents (seal_id, talent) VALUES (?, ?)", (sid, talent))
     conn.commit()
 
-def talent_on_attack(sid, dmg, talent):
+def talent_on_attack(sid, dmg, talent, level=1):
     if talent == "mage": return int(dmg * 0.3)
-    elif talent == "summoner": return 15
+    elif talent == "summoner": return 10 + (level - 1) * 2
     elif talent == "archer":
         if random.random() < 0.20: return int(dmg * 0.5)
         return 0
     return 0
 
+
 def talent_on_defend(dmg, talent):
     if talent == "warrior": return int(dmg * 0.75)
     return dmg
 
-def talent_heal_battle(max_hp, talent):
-    if talent == "healer": return int(max_hp * 0.20)
+def talent_heal_battle(max_hp, talent, level=1):
+    if talent == "healer":
+        return 10 + (level - 1) * 2
     return 0
 
 def healer_ooc_heal(sid):
@@ -1071,9 +1073,10 @@ def healer_ooc_heal(sid):
             if rem.total_seconds() > 0:
                 return f"⏳ {int(rem.total_seconds()//60)}м {int(rem.total_seconds()%60)}с"
         except: pass
-    nh = min(eh, seal[3] + 25); healed = nh - seal[3]
+    heal_amount = 10 + (seal[9] - 1) * 2
+    nh = min(eh, seal[3] + heal_amount); healed = nh - seal[3]
     update_seal(sid, health=nh, healer_cd=datetime.now().isoformat())
-    return f"💚 +{healed} HP!"
+    return f"💚 +{healed} HP! (ур.{seal[9]}, лечение: {heal_amount})"
 
 # ==================== ЛОТЕРЕЯ ====================
 def buy_lottery_ticket(uid):
@@ -2116,7 +2119,7 @@ def do_battle(call):
         bhp -= dmg
         log.append(f"Р{rnd}: {seal[2]} →{dmg} (босс {max(0, bhp)}❤️)")
         if talent:
-            extra = talent_on_attack(sid, dmg, talent)
+            extra = talent_on_attack(sid, dmg, talent, seal[9])
             if extra > 0:
                 bhp -= extra
                 log.append(f"  ✨ Талант: +{extra}!")
@@ -2140,7 +2143,7 @@ def do_battle(call):
         shp -= dm; log.append(f"{bn} →{dm} ({seal[2]} {max(0, shp)}❤️)")
         if prg > 0: shp = min(eh, shp + prg)
         if talent and not healer_used:
-            ht = talent_heal_battle(eh, talent)
+            ht = talent_heal_battle(eh, talent, seal[9])
             if ht > 0:
                 shp = min(eh, shp + ht); healer_used = True
                 log.append(f"💚 Талант: +{ht}HP!")
@@ -2303,7 +2306,7 @@ def dng_atk(call):
         if ptn: d = int(d * (1 + ptn))
         mon["hp"] -= d
         if talent:
-            extra = talent_on_attack(sid, d, talent)
+            extra = talent_on_attack(sid, d, talent, seal[9])
             if extra > 0:
                 mon["hp"] -= extra; log.append(f"✨ Талант: +{extra}!")
         log.append(f"{seal[2]} →{d} (монстр {max(0, mon['hp'])}❤️)")
@@ -2326,7 +2329,7 @@ def dng_atk(call):
         shp -= dm; log.append(f"{mon['name']} →{dm} ({seal[2]} {max(0, shp)}❤️)")
         if prg > 0: shp = min(eh, shp + prg)
         if talent and not healer_used:
-            ht = talent_heal_battle(eh, talent)
+            ht = talent_heal_battle(eh, talent, seal[9])
             if ht > 0:
                 shp = min(eh, shp + ht); healer_used = True; log.append(f"💚 Талант: +{ht}HP!")
         ls = sum(1 for s in skills if s["effect"] == "lifesteal_5")
@@ -2536,6 +2539,8 @@ def duel_seal(call):
     while chp > 0 and ohp > 0:
         rnd += 1
         if rnd > 15: break
+
+        # --- Атака вызывающего ---
         cd = ces
         if any(s["effect"] == "berserk" for s in csk) and chp < ceh * 0.3: cd = int(cd * 1.5)
         if random.random() < sum(0.15 for s in csk if s["effect"] == "crit_15"): cd *= 2; log.append("⚡ Крит!")
@@ -2543,44 +2548,63 @@ def duel_seal(call):
         if cptn: cd = int(cd * (1 + cptn))
         ohp -= cd
         if ctalent:
-            extra = talent_on_attack(csid, cd, ctalent)
+            extra = talent_on_attack(csid, cd, ctalent, cseal[9])
             if extra > 0: ohp -= extra; log.append(f"✨ {cseal[2]}: +{extra}!")
         log.append(f"Р{rnd}: {cseal[2]} →{cd} ({oseal[2]} {max(0, ohp)}❤️)")
         if ohp <= 0: break
+
         if cpsp > 0 and ohp > 0 and random.random() < 0.5:
             d2 = max(1, ces - oed + random.randint(-3, 5))
             if cptn: d2 = int(d2 * (1 + cptn))
             ohp -= d2; log.append(f"💨 Скорость! →{d2}")
         if ohp <= 0: break
+
         if random.random() < sum(0.10 for s in csk if s["effect"] == "double_strike") and ohp > 0:
             d2 = max(1, ces - oed + random.randint(-3, 5))
             if cptn: d2 = int(d2 * (1 + cptn))
             ohp -= d2; log.append(f"⚔️ Двойной! →{d2}")
         if ohp <= 0: break
+
+        # --- Атака отвечающего ---
         od = oes
         if any(s["effect"] == "berserk" for s in osk) and ohp < oeh * 0.3: od = int(od * 1.5)
         if random.random() < sum(0.15 for s in osk if s["effect"] == "crit_15"): od *= 2; log.append("⚡ Крит в ответ!")
         cdodge = cpdd / 100.0 + sum(0.10 for s in csk if s["effect"] == "dodge_10")
         if random.random() < cdodge: log.append("💨 Уклонение!"); continue
         od = max(1, od - ced + random.randint(-3, 5))
+        if optn: od = int(od * (1 + optn))
+        chp -= od
+        # Талант отвечающего при атаке (РАНЕЕ ОТСУТСТВОВАЛ)
+        if otalent:
+            extra = talent_on_attack(osid, od, otalent, oseal[9])
+            if extra > 0: chp -= extra; log.append(f"✨ {oseal[2]}: +{extra}!")
+        log.append(f"Р{rnd}: {oseal[2]} →{od} ({cseal[2]} {max(0, chp)}❤️)")
+        if chp <= 0: break
+
+        # --- Защита и лечение вызывающего ---
         if ctalent: od = talent_on_defend(od, ctalent)
         if any(s["effect"] == "dmg_reduce_10" for s in csk): od = int(od * 0.9)
-        if optn: od = int(od * (1 + optn))
-        chp -= od; log.append(f"{oseal[2]} →{od} ({cseal[2]} {max(0, chp)}❤️)")
         if cprg > 0: chp = min(ceh, chp + cprg)
         if ctalent and not ch_used:
-            ht = talent_heal_battle(ceh, ctalent)
+            ht = talent_heal_battle(ceh, ctalent, cseal[9])
             if ht > 0: chp = min(ceh, chp + ht); ch_used = True; log.append(f"💚 {cseal[2]}: +{ht}HP!")
+
+        # --- Защита и лечение отвечающего ---
+        if otalent: cd = talent_on_defend(cd, otalent)
+        if any(s["effect"] == "dmg_reduce_10" for s in osk): cd = int(cd * 0.9)
         if oprg > 0: ohp = min(oeh, ohp + oprg)
         if otalent and not oh_used:
-            ht = talent_heal_battle(oeh, otalent)
+            ht = talent_heal_battle(oeh, otalent, oseal[9])
             if ht > 0: ohp = min(oeh, ohp + ht); oh_used = True; log.append(f"💚 {oseal[2]}: +{ht}HP!")
+
+        # --- Лайфстил и шипы ---
         ls_c = sum(1 for s in csk if s["effect"] == "lifesteal_5")
         if ls_c: heal = int(od * 0.05 * ls_c); chp = min(ceh, chp + heal)
         ls_o = sum(1 for s in osk if s["effect"] == "lifesteal_5")
         if ls_o: heal = int(cd * 0.05 * ls_o); ohp = min(oeh, ohp + heal)
         if any(s["effect"] == "thorns" for s in csk): ohp -= int(od * 0.2)
         if any(s["effect"] == "thorns" for s in osk): chp -= int(cd * 0.2)
+
     decrement_potion_use(csid); decrement_potion_use(osid)
     winner_id = 0
     if ohp <= 0:
@@ -2869,12 +2893,17 @@ def clan_dng_atk(call):
         if t: talent_b[t] = talent_b.get(t, 0) + 1
     seal_hp = {s[0]: s[3] for s in all_seals}; thp = sum(seal_hp.values())
     log = [f"🏰 Этаж {fl}: {len(all_seals)} тюленей vs {mon['name']}"]
+    summoner_damage = 0
+    for s in all_seals:
+    t = get_seal_talent(s[0])
+    if t == "summoner":
+        summoner_damage += 10 + (s[9] - 1) * 2
     while thp > 0 and mon["hp"] > 0:
         dmg = max(1, ts - mon["def"] + random.randint(-5, 10)); mon["hp"] -= dmg
         if talent_b.get("mage", 0) > 0:
             ex = int(dmg * 0.3 * talent_b["mage"]); mon["hp"] -= ex; log.append(f"✨ Маги: +{ex}!")
-        if talent_b.get("summoner", 0) > 0:
-            ex = 15 * talent_b["summoner"]; mon["hp"] -= ex; log.append(f"🐾 Призыв: +{ex}!")
+        if summoner_damage > 0:
+        mon["hp"] -= summoner_damage; log.append(f"🐾 Призыв: +{summoner_damage}!")
         if talent_b.get("archer", 0) > 0 and random.random() < 0.2 * talent_b["archer"]:
             ex = int(dmg * 0.5); mon["hp"] -= ex; log.append(f"🏹 Залп: +{ex}!")
         log.append(f"Тюлени →{dmg} (монстр {max(0, mon['hp'])}❤️)")
