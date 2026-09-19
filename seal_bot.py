@@ -2891,13 +2891,13 @@ def clan_dng_atk(call):
     for s in all_seals:
         t = get_seal_talent(s[0])
         if t: talent_b[t] = talent_b.get(t, 0) + 1
-    seal_hp = {s[0]: s[3] for s in all_seals}; thp = sum(seal_hp.values())
-    log = [f"🏰 Этаж {fl}: {len(all_seals)} тюленей vs {mon['name']}"]
-    summoner_damage = 0
-    for s in all_seals:
-    t = get_seal_talent(s[0])
-    if t == "summoner":
+        for s in all_seals:
+        t = get_seal_talent(s[0])
+        if t == "summoner":
         summoner_damage += 10 + (s[9] - 1) * 2
+        seal_hp = {s[0]: s[3] for s in all_seals}; thp = sum(seal_hp.values())
+        log = [f"🏰 Этаж {fl}: {len(all_seals)} тюленей vs {mon['name']}"]
+        summoner_damage = 0
     while thp > 0 and mon["hp"] > 0:
         dmg = max(1, ts - mon["def"] + random.randint(-5, 10)); mon["hp"] -= dmg
         if talent_b.get("mage", 0) > 0:
