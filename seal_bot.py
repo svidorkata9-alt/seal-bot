@@ -2341,6 +2341,25 @@ def dng_atk(call):
     if mon["hp"] <= 0:
         update_seal(sid, health=min(eh, max(1, shp)))
         log.append("\n✅ Повержен!")
+
+        # ===== ОПЫТ ЗА МОНСТРА =====
+        # Базовый опыт зависит от HP, силы и защиты монстра + бонус за этаж
+        mon_exp_base = mon["hp"] + mon["str"] * 3 + mon["def"] * 2
+        floor_bonus = fl * 15
+        exp_gained = int((mon_exp_base + floor_bonus) * get_exp_mult())
+        # Минимум 30, чтобы даже слабые монстры давали ощутимый опыт
+        exp_gained = max(30, exp_gained)
+
+        # Начисляем опыт
+        s_after = get_seal(sid)
+        if s_after:
+            update_seal(sid, exp=s_after[10] + exp_gained)
+            log.append(f"📈 +{exp_gained}оп")
+            # Проверяем повышение уровня
+            lv = check_levelup(sid)
+            if lv:
+                log.append(f"🎉 Ур.{lv}!")
+
         d = process_drops(uid, mon.get("drops", {}))
         if d: log.append(f"📦 {', '.join(d)}")
         conn = get_conn(); c = conn.cursor()
@@ -2833,6 +2852,7 @@ def clan_dng_floor(call, cid, fl):
     bot.edit_message_text(t, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("cda_"))
+@bot.callback_query_handler(func=lambda c: c.data.startswith("cda_"))
 def clan_dng_atk(call):
     uid = call.from_user.id; p = call.data.split("_"); cid = int(p[1]); fl = int(p[2])
     members = get_clan_members(cid); all_seals = []
@@ -2871,12 +2891,25 @@ def clan_dng_atk(call):
         log.append(f"{mon['name']} →{target[2]} на {actual_dm} (осталось {max(0, thp)}❤️)")
     if mon["hp"] <= 0:
         log.append("\n✅ Монстр повержен!")
-        rw = 200 + fl * 50; eg = 100 + fl * 30
+        rw = 200 + fl * 50
+
+        # ===== ОПЫТ ЗА МОНСТРА (зависит от силы) =====
+        mon_exp_base = mon["hp"] + mon["str"] * 3 + mon["def"] * 2
+        floor_bonus = fl * 20
+        eg = max(50, int((mon_exp_base + floor_bonus) * get_exp_mult()))
+
+        level_ups = []
         for mid in members:
             add_fishnets(mid, rw)
             for s in get_player_seals(mid):
-                if s[11] == 0: update_seal(s[0], exp=s[10] + eg)
+                if s[11] == 0:
+                    update_seal(s[0], exp=s[10] + eg)
+                    lv = check_levelup(s[0])
+                    if lv: level_ups.append(f"{s[2]} → ур.{lv}")
         log.append(f"🏆 Все получили 🐟{rw} и +{eg}оп!")
+        if level_ups:
+            log.append("🎉 Повышение уровня: " + ", ".join(level_ups))
+
         if fl >= CLAN_DUNGEON_FLOORS:
             log.append("👑 *Клановое подземелье пройдено!*")
             conn = get_conn(); c = conn.cursor()
