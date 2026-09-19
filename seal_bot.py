@@ -2225,26 +2225,7 @@ def menu_dungeon(message):
     if not m.keyboard:
         bot.send_message(chat_id, "Все малыши не готовы к бою!"); return
     bot.send_message(chat_id, "🏰 Выберите тюленя (10 этажей, сундуки!):", reply_markup=m)
-@bot.callback_query_handler(func=lambda c: c.data.startswith("dngmenu_"))
-def dungeon_menu(call):
-    uid = call.from_user.id
-    try: sid = int(call.data.split("_")[1])
-    except: bot.answer_callback_query(call.id, "Ошибка!", show_alert=True); return
-    seal = get_seal(sid)
-    if not seal or seal[1] != uid:
-        bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True); return
-    m = types.InlineKeyboardMarkup()
-    for did, cfg in DUNGEON_CONFIGS.items():
-        locked = seal[9] < cfg["min_level"]
-        label = f"{cfg['name']} (ур.{cfg['min_level']}+)" if locked else cfg["name"]
-        if locked:
-            m.add(types.InlineKeyboardButton(f"🔒 {label}", callback_data="noop"))
-        else:
-            m.add(types.InlineKeyboardButton(label, callback_data=f"ds_{sid}_{did}"))
-    m.add(types.InlineKeyboardButton("◀️", callback_data=f"sinfo_{sid}"))
-    bot.edit_message_text("🏰 Выберите подземелье:", call.message.chat.id, call.message.message_id, reply_markup=m)
 
-@bot.callback_query_handler(func=lambda c: c.data.startswith("ds_"))
 @bot.callback_query_handler(func=lambda c: c.data.startswith("ds_"))
 def dng_start(call):
     uid = call.from_user.id; p = call.data.split("_", 2); sid = int(p[1]); did = int(p[2]) if len(p) > 2 else 0
@@ -2263,7 +2244,24 @@ def dng_start(call):
     c.execute("INSERT INTO dungeon_runs (user_id, seal_id, current_floor, active, current_monster, difficulty) VALUES (?, ?, 1, 1, 0, ?)", (uid, sid, did))
     conn.commit()
     dng_floor(call, sid, 1, 0, did)
-
+@bot.callback_query_handler(func=lambda c: c.data.startswith("dngmenu_"))
+def dungeon_menu(call):
+    uid = call.from_user.id
+    try: sid = int(call.data.split("_")[1])
+    except: bot.answer_callback_query(call.id, "Ошибка!", show_alert=True); return
+    seal = get_seal(sid)
+    if not seal or seal[1] != uid:
+        bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True); return
+    m = types.InlineKeyboardMarkup()
+    for did, cfg in DUNGEON_CONFIGS.items():
+        locked = seal[9] < cfg["min_level"]
+        label = f"{cfg['name']} (ур.{cfg['min_level']}+)" if locked else cfg["name"]
+        if locked:
+            m.add(types.InlineKeyboardButton(f"🔒 {label}", callback_data="noop"))
+        else:
+            m.add(types.InlineKeyboardButton(label, callback_data=f"ds_{sid}_{did}"))
+    m.add(types.InlineKeyboardButton("◀️", callback_data=f"sinfo_{sid}"))
+    bot.edit_message_text("🏰 Выберите подземелье:", call.message.chat.id, call.message.message_id, reply_markup=m)
 
 def dng_floor(call, sid, fl, mon_idx, did=0):
     seal = get_seal(sid)
