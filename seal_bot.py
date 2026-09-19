@@ -2876,7 +2876,6 @@ def clan_dng_floor(call, cid, fl):
     bot.edit_message_text(t, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=m)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("cda_"))
-@bot.callback_query_handler(func=lambda c: c.data.startswith("cda_"))
 def clan_dng_atk(call):
     uid = call.from_user.id; p = call.data.split("_"); cid = int(p[1]); fl = int(p[2])
     members = get_clan_members(cid); all_seals = []
@@ -2884,30 +2883,34 @@ def clan_dng_atk(call):
         for s in get_player_seals(mid):
             if s[11] == 0 and s[9] >= CLAN_DUNGEON_MIN_LEVEL: all_seals.append(s)
     if not all_seals: bot.answer_callback_query(call.id, "Нет тюленей!"); return
+
     mon = CLAN_DUNGEON_MONSTERS[fl - 1].copy()
+    mon_max_hp = mon["hp"]
     ts = sum(get_effective_stats(s[0])[0] for s in all_seals)
     td = sum(get_effective_stats(s[0])[1] for s in all_seals)
     talent_b = {}
+    summoner_damage = 0
     for s in all_seals:
         t = get_seal_talent(s[0])
         if t: talent_b[t] = talent_b.get(t, 0) + 1
-        for s in all_seals:
-        t = get_seal_talent(s[0])
         if t == "summoner":
-        summoner_damage += 10 + (s[9] - 1) * 2
-        seal_hp = {s[0]: s[3] for s in all_seals}; thp = sum(seal_hp.values())
-        log = [f"🏰 Этаж {fl}: {len(all_seals)} тюленей vs {mon['name']}"]
-        summoner_damage = 0
+            summoner_damage += 10 + (s[9] - 1) * 2
+
+    seal_hp = {s[0]: s[3] for s in all_seals}
+    thp = sum(seal_hp.values())
+    log = [f"🏰 Этаж {fl}: {len(all_seals)} тюленей vs {mon['name']}"]
+
     while thp > 0 and mon["hp"] > 0:
         dmg = max(1, ts - mon["def"] + random.randint(-5, 10)); mon["hp"] -= dmg
         if talent_b.get("mage", 0) > 0:
             ex = int(dmg * 0.3 * talent_b["mage"]); mon["hp"] -= ex; log.append(f"✨ Маги: +{ex}!")
         if summoner_damage > 0:
-        mon["hp"] -= summoner_damage; log.append(f"🐾 Призыв: +{summoner_damage}!")
+            mon["hp"] -= summoner_damage; log.append(f"🐾 Призыв: +{summoner_damage}!")
         if talent_b.get("archer", 0) > 0 and random.random() < 0.2 * talent_b["archer"]:
             ex = int(dmg * 0.5); mon["hp"] -= ex; log.append(f"🏹 Залп: +{ex}!")
         log.append(f"Тюлени →{dmg} (монстр {max(0, mon['hp'])}❤️)")
         if mon["hp"] <= 0: break
+
         dm = max(1, mon["str"] - td + random.randint(-2, 6))
         if talent_b.get("warrior", 0) > 0:
             dm = int(dm * (1 - 0.25 * min(1, talent_b["warrior"] / len(all_seals))))
@@ -2918,12 +2921,13 @@ def clan_dng_atk(call):
         seal_hp[target[0]] = new_hp; update_seal(target[0], health=new_hp)
         thp -= actual_dm
         log.append(f"{mon['name']} →{target[2]} на {actual_dm} (осталось {max(0, thp)}❤️)")
+
     if mon["hp"] <= 0:
         log.append("\n✅ Монстр повержен!")
         rw = 200 + fl * 50
 
         # ===== ОПЫТ ЗА МОНСТРА (зависит от силы) =====
-        mon_exp_base = mon["hp"] + mon["str"] * 3 + mon["def"] * 2
+        mon_exp_base = mon_max_hp + mon["str"] * 3 + mon["def"] * 2
         floor_bonus = fl * 20
         eg = max(50, int((mon_exp_base + floor_bonus) * get_exp_mult()))
 
@@ -2956,6 +2960,7 @@ def clan_dng_atk(call):
         conn = get_conn(); c = conn.cursor()
         c.execute("UPDATE clan_dungeons SET active=0 WHERE clan_id=?", (cid,)); conn.commit()
         bot.edit_message_text("\n".join(log), call.message.chat.id, call.message.message_id, parse_mode='Markdown')
+
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("cdn_"))
 def clan_dng_next(call):
