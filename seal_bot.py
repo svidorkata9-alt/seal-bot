@@ -1801,7 +1801,7 @@ def seal_unequip_menu(call):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("unq_"))
 def seal_do_unequip(call):
-    uid = call.from_user.id; p = call.data.split("_"); sid = int(p[1]); col = p[2]
+    uid = call.from_user.id; p = call.data.split("_", 2); sid = int(p[1]); col = p[2]
     seal = get_seal(sid)
     if not seal or seal[1] != uid:
         bot.answer_callback_query(call.id, "Не ваш тюлень!", show_alert=True); return
